@@ -9,17 +9,18 @@
 #include <cmath>
 
 // A Google-Maps-like camera manipulator for large (ECEF) coordinates.
-// Panning follows local tangent (East/North) frame, camera up is local North.
+// Panning follows local tangent (East/North) frame, using a fixed local frame.
 class GoogleMapsManipulator : public osgGA::CameraManipulator {
 public:
     GoogleMapsManipulator()
-        : _center(0.0, 0.0, 0.0), _distance(100.0), _lastX(0.0f), _lastY(0.0f)
+        : _center(0.0, 0.0, 0.0), _distance(100.0), _lastX(0.0f), _lastY(0.0f),
+          _fixedUp(0.0, 0.0, 1.0), _fixedNorth(0.0, 1.0, 0.0), _fixedEast(1.0, 0.0, 0.0)
     {}
 
     const char* className() const override { return "GoogleMapsManipulator"; }
 
-    // --- Constants ---
 private:
+    // --- Constants ---
     static constexpr double kMinDistance = 10.0; // Minimum camera-ground distance
     static constexpr double kScrollFactor = 0.8; // Zoom multiplier
     static constexpr double kPanScale = 1; // Pan speed scale per unit distance
@@ -27,9 +28,7 @@ private:
     static constexpr double kTinyEpsilon2 = 1e-12; // Squared length epsilon
 
     // --- Math helpers ---
-    // Normalize v; if too small, return fallback.
-    static osg::Vec3d normalizeOr(const osg::Vec3d& v,
-                                  const osg::Vec3d& fallback)
+    static osg::Vec3d normalizeOr(const osg::Vec3d& v, const osg::Vec3d& fallback)
     {
         if (v.length2() <= kTinyEpsilon2) return fallback;
         osg::Vec3d out = v;
@@ -37,27 +36,14 @@ private:
         return out;
     }
 
-    // Calculate the true "Up" vector for the given point on Earth.
-    // For ECEF coordinates, up is the vector from Earth's center to the point.
-    osg::Vec3d getSurfaceNormal(const osg::Vec3d& point) const
+    // Compute and cache a fixed local tangent basis using the current center.
+    void computeFixedFrame()
     {
-        // If point is far from origin, assume ECEF and use radial up. Otherwise
-        // fallback to Z+.
-        if (point.length2() > 1000.0)
-            return normalizeOr(point, osg::Vec3d(0.0, 0.0, 1.0));
-        return osg::Vec3d(0.0, 0.0, 1.0);
-    }
+        // Up approximated as Z+ for local, or radial if sufficiently far.
+        osg::Vec3d up = (_center.length2() > 1000.0) ? normalizeOr(_center, osg::Vec3d(0.0, 0.0, 1.0))
+                                                     : osg::Vec3d(0.0, 0.0, 1.0);
+        const osg::Vec3d globalNorth(0.0, 0.0, 1.0);
 
-    // Compute local tangent basis at point: Right (East) and North vectors.
-    // Handles degeneracy near the poles by picking an alternate reference axis.
-    void getTangentBasis(const osg::Vec3d& point, osg::Vec3d& outRight,
-                         osg::Vec3d& outNorth) const
-    {
-        const osg::Vec3d up = getSurfaceNormal(point);
-        const osg::Vec3d globalNorth(0.0, 0.0, 1.0); // Earth axis
-
-        // Try to compute East from globalNorth x up. If degenerate (near pole),
-        // use X-axis instead.
         osg::Vec3d east = globalNorth ^ up;
         if (east.length2() <= kTinyEpsilon2)
             east = osg::Vec3d(1.0, 0.0, 0.0) ^ up;
@@ -66,8 +52,9 @@ private:
         osg::Vec3d north = up ^ east;
         north = normalizeOr(north, globalNorth);
 
-        outRight = east;
-        outNorth = north;
+        _fixedUp = up;
+        _fixedEast = east;
+        _fixedNorth = north;
     }
 
     // Clamp distance to sane minimums.
@@ -76,7 +63,7 @@ private:
         if (_distance < kMinDistance) _distance = kMinDistance;
     }
 
-    // Reset center/distance to scene bounds when available.
+    // Reset center/distance to scene bounds when available, and recompute frame.
     void resetFromBounds()
     {
         if (!_node.valid()) return;
@@ -84,6 +71,7 @@ private:
         if (!bs.valid()) return;
         _center = bs.center();
         _distance = std::max(100.0, bs.radius() * 2.5);
+        computeFixedFrame();
     }
 
 public:
@@ -104,14 +92,12 @@ public:
 
     void setByMatrix(const osg::Matrixd& matrix) override
     {
-        // Eye position and viewing direction from matrix.
         const osg::Vec3d eye = matrix.getTrans();
         osg::Vec3d lookDir(-matrix(2, 0), -matrix(2, 1), -matrix(2, 2));
         lookDir = normalizeOr(lookDir, osg::Vec3d(0.0, 0.0, -1.0));
 
-        // Ray cast against tangent plane at current center to find ground
-        // point.
-        const osg::Vec3d planeNormal = getSurfaceNormal(_center);
+        // Ray cast against fixed tangent plane at current center to find ground point.
+        const osg::Vec3d planeNormal = _fixedUp;
         const double denom = lookDir * planeNormal;
 
         if (std::abs(denom) > kDenomEpsilon)
@@ -144,15 +130,9 @@ public:
 
     osg::Matrixd getInverseMatrix() const override
     {
-        // Eye is located along local Up (surface normal) at the current
-        // distance.
-        const osg::Vec3d up = getSurfaceNormal(_center);
-        const osg::Vec3d eye = _center + (up * _distance);
-
-        // Ensure on-screen up is local North.
-        osg::Vec3d right, north;
-        getTangentBasis(_center, right, north);
-        return osg::Matrixd::lookAt(eye, _center, north);
+        // Eye is located along fixed Up at the current distance.
+        const osg::Vec3d eye = _center + (_fixedUp * _distance);
+        return osg::Matrixd::lookAt(eye, _center, _fixedNorth);
     }
 
     void home(double /*currentTime*/) override
@@ -166,8 +146,7 @@ public:
         home(0.0);
     }
 
-    bool handle(const osgGA::GUIEventAdapter& ea,
-                osgGA::GUIActionAdapter& aa) override
+    bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override
     {
         switch (ea.getEventType())
         {
@@ -177,8 +156,7 @@ public:
                 return true;
 
             case osgGA::GUIEventAdapter::DRAG: {
-                if (!(ea.getButtonMask()
-                      & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON))
+                if (!(ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON))
                     return false;
 
                 const float x = ea.getXnormalized();
@@ -186,12 +164,9 @@ public:
                 const float dx = x - _lastX;
                 const float dy = y - _lastY;
 
-                osg::Vec3d right, north;
-                getTangentBasis(_center, right, north);
-
                 const double scale = _distance * kPanScale;
-                _center -= (right * static_cast<double>(dx) * scale);
-                _center -= (north * static_cast<double>(dy) * scale);
+                _center -= (_fixedEast * static_cast<double>(dx) * scale);
+                _center -= (_fixedNorth * static_cast<double>(dy) * scale);
 
                 _lastX = x;
                 _lastY = y;
@@ -233,4 +208,9 @@ private:
     osg::Vec3d _center;
     double _distance;
     float _lastX, _lastY;
+
+    // Cached local frame
+    osg::Vec3d _fixedUp;
+    osg::Vec3d _fixedNorth;
+    osg::Vec3d _fixedEast;
 };
