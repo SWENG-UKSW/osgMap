@@ -10,7 +10,7 @@
 class GoogleMapsManipulator : public osgGA::CameraManipulator {
 public:
     GoogleMapsManipulator()
-        : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1)
+        : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1), _tiltDeg(0.0)
     {} // Non-zero center avoids a degenerate up/eye direction
 
     void resetFromBounds()
@@ -38,10 +38,25 @@ public:
     // Build the view matrix each frame: eye along the center direction at a given distance, global Z as up.
     osg::Matrixd getInverseMatrix() const override
     {
-        osg::Vec3d eye = _center;
-        eye.normalize();
-        eye *= (_center.length() + _distance);
-        return osg::Matrixd::lookAt(eye, _center, osg::Vec3d(0, 0, 1));
+        // Local tangent frame at `_center`: up is radial from origin, east is Z x up, north is up x east.
+        osg::Vec3d up = _center; // radial up
+        up.normalize();
+        osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
+        if (east.length2() == 0.0) {
+            // Avoid degeneracy at poles: pick arbitrary east
+            east.set(1.0, 0.0, 0.0);
+        }
+        east.normalize();
+        osg::Vec3d north = up ^ east; // geographic north
+        north.normalize();
+
+        // Eye lies in the plane spanned by local north and up, controlled by tilt angle [45,90] deg.
+        const double tiltRad = osg::DegreesToRadians(_tiltDeg);
+        osg::Vec3d offset = (-north * std::sin(tiltRad)) + (up * std::cos(tiltRad));
+        offset.normalize();
+        osg::Vec3d eye = _center + offset * _distance;
+        // Keep screen up aligned to geographic north (no yaw/rotation).
+        return osg::Matrixd::lookAt(eye, _center, north);
     }
 
     // Forward matrix required by the base class.
@@ -65,18 +80,35 @@ public:
             return true;
         }
         if (ea.getEventType() == osgGA::GUIEventAdapter::DRAG
-            && (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON))
+            && (ea.getButtonMask() & (osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON | osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)))
         {
-            // Local tangent frame: up (center direction), east (global Z × up), north (up × east).
-            osg::Vec3d up = _center;
-            up.normalize();
-            osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
-            east.normalize();
-            osg::Vec3d north = up ^ east;
-
             float x = ea.getXnormalized(), y = ea.getYnormalized();
-            _center -= (east * (x - _lastX) * _distance)
-                + (north * (y - _lastY) * _distance);
+            const float dx = x - _lastX;
+            const float dy = y - _lastY;
+
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)
+            {
+                // Pan: move center along local east/north, maintaining north-up orientation.
+                osg::Vec3d up = _center;
+                up.normalize();
+                osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
+                if (east.length2() == 0.0) east.set(1.0, 0.0, 0.0);
+                east.normalize();
+                osg::Vec3d north = up ^ east;
+                north.normalize();
+
+                _center -= (east * dx * _distance) + (north * dy * _distance);
+            }
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)
+            {
+                // Tilt without rotation: adjust tilt angle based on vertical drag.
+                // Positive dy (drag up) decreases tilt towards 0 (more top-down).
+                const double sensitivity = 100.0; // scale dy to degrees
+                _tiltDeg -= dy * sensitivity;
+                if (_tiltDeg < 0.0) _tiltDeg = 0.0; //top-down limit
+                if (_tiltDeg > 45.0) _tiltDeg = 45.0; //flat limit
+            }
+
             _lastX = x;
             _lastY = y;
             aa.requestRedraw();
@@ -105,4 +137,5 @@ private:
     osg::Vec3d _center;
     double _distance;
     float _lastX, _lastY;
+    double _tiltDeg;
 };
