@@ -10,8 +10,17 @@
 class GoogleMapsManipulator : public osgGA::CameraManipulator {
 public:
     GoogleMapsManipulator()
-        : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1), _tiltDeg(0.0)
-    {} // Non-zero center avoids a degenerate up/eye direction
+        : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1),
+          _isMoving(false), _lastMoveTime(0.0), _movementTimeout(0.2)
+    {}
+
+    bool isMoving() const
+    {
+        double now = osg::Timer::instance()->time_s();
+        return _isMoving && (now - _lastMoveTime < _movementTimeout);
+    }
+
+    void setMovementTimeout(double seconds) { _movementTimeout = seconds; }
 
     void resetFromBounds()
     {
@@ -72,141 +81,8 @@ public:
     bool handle(const osgGA::GUIEventAdapter& ea,
                 osgGA::GUIActionAdapter& aa) override
     {
-        if (ea.getEventType() == osgGA::GUIEventAdapter::PUSH)
-        {
-            // Remember cursor position to compute drag deltas.
-            _lastX = ea.getXnormalized();
-            _lastY = ea.getYnormalized();
-            return true;
-        }
-        if (ea.getEventType() == osgGA::GUIEventAdapter::DRAG
-            && (ea.getButtonMask() & (osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON | osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)))
-        {
-            float x = ea.getXnormalized(), y = ea.getYnormalized();
-            const float dx = x - _lastX;
-            const float dy = y - _lastY;
-
-            if (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)
-            {
-                // Pan: move center along local east/north, maintaining north-up orientation.
-                osg::Vec3d up = _center;
-                up.normalize();
-                osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
-                if (east.length2() == 0.0) east.set(1.0, 0.0, 0.0);
-                east.normalize();
-                osg::Vec3d north = up ^ east;
-                north.normalize();
-
-                _center -= (east * dx * _distance) + (north * dy * _distance);
-            }
-            if (ea.getButtonMask() & osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)
-            {
-                // Tilt without rotation: adjust tilt angle based on vertical drag.
-                // Positive dy (drag up) decreases tilt towards 0 (more top-down).
-                const double sensitivity = 100.0; // scale dy to degrees
-                _tiltDeg -= dy * sensitivity;
-                if (_tiltDeg < 0.0) _tiltDeg = 0.0; //top-down limit
-                if (_tiltDeg > 45.0) _tiltDeg = 45.0; //flat limit
-            }
-
-            _lastX = x;
-            _lastY = y;
-            aa.requestRedraw();
-            return true;
-        }
-        if (ea.getEventType() == osgGA::GUIEventAdapter::SCROLL)
-        {
-            // Zoom toward/away from the center.
-            _distance *=
-                (ea.getScrollingMotion() == osgGA::GUIEventAdapter::SCROLL_UP
-                     ? 0.8
-                     : 1.25);
-            _distance = std::max(_distance, 10.0);
-            aa.requestRedraw();
-            return true;
-        }
-        // Home key resets center/distance to node bounds.
-        return (ea.getEventType() == osgGA::GUIEventAdapter::KEYDOWN
-                && ea.getKey() == osgGA::GUIEventAdapter::KEY_Home)
-            ? (resetFromBounds(), aa.requestRedraw(), true)
-            : false;
-    }
-
-private:
-    osg::observer_ptr<osg::Node> _node;
-    osg::Vec3d _center;
-    double _distance;
-    float _lastX, _lastY;
-    double _tiltDeg;
-};
-#include <osgGA/CameraManipulator>
-#include <osgGA/GUIEventAdapter>
-#include <osgGA/GUIActionAdapter>
-#include <osg/Matrix>
-#include <osg/Vec3d>
-#include <osg/BoundingSphere>
-#include <osg/Node>
-#include <algorithm>
-
-class GoogleMapsManipulator : public osgGA::CameraManipulator {
-public:
-    GoogleMapsManipulator()
-        : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1),
-          _isMoving(false), _lastMoveTime(0.0), _movementTimeout(0.2)
-    {}
-
-    // ---- NEW PUBLIC API ----
-    bool isMoving() const 
-    {
-        double now = osg::Timer::instance()->time_s();
-        return _isMoving && (now - _lastMoveTime < _movementTimeout);
-    }
-
-    void setMovementTimeout(double seconds) { _movementTimeout = seconds; }
-    // -------------------------
-
-    void resetFromBounds()
-    {
-        if (_node.valid())
-        {
-            const osg::BoundingSphere bs = _node->getBound();
-            _center = bs.center();
-            _distance = bs.radius() * 0.5;
-        }
-    }
-
-    void setNode(osg::Node* node) override
-    {
-        _node = node;
-        osgGA::CameraManipulator::setNode(node);
-        resetFromBounds();
-    }
-    void home(double) override { resetFromBounds(); }
-    void home(const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) override
-    {
-        resetFromBounds();
-    }
-
-    osg::Matrixd getInverseMatrix() const override
-    {
-        osg::Vec3d eye = _center;
-        eye.normalize();
-        eye *= (_center.length() + _distance);
-        return osg::Matrixd::lookAt(eye, _center, osg::Vec3d(0, 0, 1));
-    }
-
-    osg::Matrixd getMatrix() const override
-    {
-        return osg::Matrixd::inverse(getInverseMatrix());
-    }
-
-    void setByMatrix(const osg::Matrixd&) override {}
-    void setByInverseMatrix(const osg::Matrixd&) override {}
-
-    bool handle(const osgGA::GUIEventAdapter& ea,
-                osgGA::GUIActionAdapter& aa) override
-    {
         // Record movement helpers
+        // Keeps track of activity for inertia or idle timers
         auto markMovement = [&]() {
             _isMoving = true;
             _lastMoveTime = osg::Timer::instance()->time_s();
@@ -221,21 +97,54 @@ public:
         }
 
         if (ea.getEventType() == osgGA::GUIEventAdapter::DRAG
-            && (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON))
+            && (ea.getButtonMask()
+                & (osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON
+                   | osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)))
         {
-            osg::Vec3d up = _center;
-            up.normalize();
-            osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
-            east.normalize();
-            osg::Vec3d north = up ^ east;
+            float x = ea.getXnormalized();
+            float y = ea.getYnormalized();
+            const float dx = x - _lastX;
+            const float dy = y - _lastY;
 
-            float x = ea.getXnormalized(), y = ea.getYnormalized();
-            _center -= (east * (x - _lastX) * _distance)
-                + (north * (y - _lastY) * _distance);
+            // Panning
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)
+            {
+                // Pan: move center along local east/north, maintaining north-up
+                // orientation.
+                osg::Vec3d up = _center;
+                up.normalize();
+
+                osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
+                // Handle case where up vector is
+                // effectively vertical
+                if (east.length2() == 0.0) east.set(1.0, 0.0, 0.0);
+                east.normalize();
+
+                osg::Vec3d north = up ^ east;
+                north.normalize(); // Explicit
+                                   // normalization
+
+                _center -= (east * dx * _distance) + (north * dy * _distance);
+            }
+
+            // [Feature from Snippet 2] Tilting
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)
+            {
+                // Tilt without rotation: adjust tilt angle based on vertical
+                // drag. Positive dy (drag up) decreases tilt towards 0 (more
+                // top-down).
+                const double sensitivity = 100.0; // scale dy to degrees
+                _tiltDeg -= dy * sensitivity;
+
+                // Clamp limits
+                if (_tiltDeg < 0.0) _tiltDeg = 0.0; // top-down limit
+                if (_tiltDeg > 45.0) _tiltDeg = 45.0; // flat limit
+            }
+
             _lastX = x;
             _lastY = y;
 
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -248,7 +157,7 @@ public:
                      : 1.25);
             _distance = std::max(_distance, 10.0);
 
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -258,7 +167,7 @@ public:
             && ea.getKey() == osgGA::GUIEventAdapter::KEY_Home)
         {
             resetFromBounds();
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -267,18 +176,17 @@ public:
     }
 
 private:
+private:
     osg::observer_ptr<osg::Node> _node;
     osg::Vec3d _center;
     double _distance;
     float _lastX, _lastY;
+    double _tiltDeg;
 
-    // ---- NEW FIELDS ----
     bool _isMoving;
     double _lastMoveTime;
     double _movementTimeout;
-    // ---------------------
 };
-
 
 
 
