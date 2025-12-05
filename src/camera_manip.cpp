@@ -14,15 +14,13 @@ public:
           _isMoving(false), _lastMoveTime(0.0), _movementTimeout(0.2)
     {}
 
-    // ---- NEW PUBLIC API ----
-    bool isMoving() const 
+    bool isMoving() const
     {
         double now = osg::Timer::instance()->time_s();
         return _isMoving && (now - _lastMoveTime < _movementTimeout);
     }
 
     void setMovementTimeout(double seconds) { _movementTimeout = seconds; }
-    // -------------------------
 
     void resetFromBounds()
     {
@@ -46,19 +44,37 @@ public:
         resetFromBounds();
     }
 
+    // Build the view matrix each frame: eye along the center direction at a given distance, global Z as up.
     osg::Matrixd getInverseMatrix() const override
     {
-        osg::Vec3d eye = _center;
-        eye.normalize();
-        eye *= (_center.length() + _distance);
-        return osg::Matrixd::lookAt(eye, _center, osg::Vec3d(0, 0, 1));
+        // Local tangent frame at `_center`: up is radial from origin, east is Z x up, north is up x east.
+        osg::Vec3d up = _center; // radial up
+        up.normalize();
+        osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
+        if (east.length2() == 0.0) {
+            // Avoid degeneracy at poles: pick arbitrary east
+            east.set(1.0, 0.0, 0.0);
+        }
+        east.normalize();
+        osg::Vec3d north = up ^ east; // geographic north
+        north.normalize();
+
+        // Eye lies in the plane spanned by local north and up, controlled by tilt angle [45,90] deg.
+        const double tiltRad = osg::DegreesToRadians(_tiltDeg);
+        osg::Vec3d offset = (-north * std::sin(tiltRad)) + (up * std::cos(tiltRad));
+        offset.normalize();
+        osg::Vec3d eye = _center + offset * _distance;
+        // Keep screen up aligned to geographic north (no yaw/rotation).
+        return osg::Matrixd::lookAt(eye, _center, north);
     }
 
+    // Forward matrix required by the base class.
     osg::Matrixd getMatrix() const override
     {
         return osg::Matrixd::inverse(getInverseMatrix());
     }
 
+    // Unused matrix setters for this manipulator.
     void setByMatrix(const osg::Matrixd&) override {}
     void setByInverseMatrix(const osg::Matrixd&) override {}
 
@@ -66,6 +82,7 @@ public:
                 osgGA::GUIActionAdapter& aa) override
     {
         // Record movement helpers
+        // Keeps track of activity for inertia or idle timers
         auto markMovement = [&]() {
             _isMoving = true;
             _lastMoveTime = osg::Timer::instance()->time_s();
@@ -80,21 +97,54 @@ public:
         }
 
         if (ea.getEventType() == osgGA::GUIEventAdapter::DRAG
-            && (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON))
+            && (ea.getButtonMask()
+                & (osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON
+                   | osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)))
         {
-            osg::Vec3d up = _center;
-            up.normalize();
-            osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
-            east.normalize();
-            osg::Vec3d north = up ^ east;
+            float x = ea.getXnormalized();
+            float y = ea.getYnormalized();
+            const float dx = x - _lastX;
+            const float dy = y - _lastY;
 
-            float x = ea.getXnormalized(), y = ea.getYnormalized();
-            _center -= (east * (x - _lastX) * _distance)
-                + (north * (y - _lastY) * _distance);
+            // Panning
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON)
+            {
+                // Pan: move center along local east/north, maintaining north-up
+                // orientation.
+                osg::Vec3d up = _center;
+                up.normalize();
+
+                osg::Vec3d east = osg::Vec3d(0, 0, 1) ^ up;
+                // Handle case where up vector is
+                // effectively vertical
+                if (east.length2() == 0.0) east.set(1.0, 0.0, 0.0);
+                east.normalize();
+
+                osg::Vec3d north = up ^ east;
+                north.normalize(); // Explicit
+                                   // normalization
+
+                _center -= (east * dx * _distance) + (north * dy * _distance);
+            }
+
+            // [Feature from Snippet 2] Tilting
+            if (ea.getButtonMask() & osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)
+            {
+                // Tilt without rotation: adjust tilt angle based on vertical
+                // drag. Positive dy (drag up) decreases tilt towards 0 (more
+                // top-down).
+                const double sensitivity = 100.0; // scale dy to degrees
+                _tiltDeg -= dy * sensitivity;
+
+                // Clamp limits
+                if (_tiltDeg < 0.0) _tiltDeg = 0.0; // top-down limit
+                if (_tiltDeg > 45.0) _tiltDeg = 45.0; // flat limit
+            }
+
             _lastX = x;
             _lastY = y;
 
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -107,7 +157,7 @@ public:
                      : 1.25);
             _distance = std::max(_distance, 10.0);
 
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -117,7 +167,7 @@ public:
             && ea.getKey() == osgGA::GUIEventAdapter::KEY_Home)
         {
             resetFromBounds();
-            markMovement();
+            markMovement(); 
             aa.requestRedraw();
             return true;
         }
@@ -126,18 +176,17 @@ public:
     }
 
 private:
+private:
     osg::observer_ptr<osg::Node> _node;
     osg::Vec3d _center;
     double _distance;
     float _lastX, _lastY;
+    double _tiltDeg;
 
-    // ---- NEW FIELDS ----
     bool _isMoving;
     double _lastMoveTime;
     double _movementTimeout;
-    // ---------------------
 };
-
 
 
 
