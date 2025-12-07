@@ -74,9 +74,115 @@ public:
         return osg::Matrixd::inverse(getInverseMatrix());
     }
 
-    // Unused matrix setters for this manipulator.
-    void setByMatrix(const osg::Matrixd&) override {}
-    void setByInverseMatrix(const osg::Matrixd&) override {}
+    // Initialize camera manipulator state from an arbitrary view matrix.
+    // Extracts camera position and orientation, then computes the manipulator's
+    // internal parameters (_center, _distance, _tiltDeg) by ray-sphere intersection
+    // with the scene's bounding sphere.
+    void setByMatrix(const osg::Matrixd& matrix) override
+    {
+        // Extract camera position from matrix translation component
+        osg::Vec3d eye = matrix.getTrans();
+
+        // Validate eye position and use default if invalid
+        if (eye.isNaN())
+        {
+            eye.set(0, 0, 100);
+        }
+
+        // Extract look direction from the negative Z-axis of the view matrix
+        // (third row of rotation component, negated)
+        osg::Vec3d lookVector(-matrix(2, 0), -matrix(2, 1), -matrix(2, 2));
+        lookVector.normalize();
+        if (lookVector.isNaN())
+        {
+            lookVector.set(0, 0, -1);
+        }
+
+        // Compute local "up" direction as the radial direction from world origin
+        // This assumes a spherical earth model where "up" points away from center
+        osg::Vec3d localUp = eye;
+        localUp.normalize();
+        
+        if (localUp.isNaN())
+        {
+            localUp.set(0, 0, 1);
+        }
+        
+        // Local "down" points toward the earth center
+        osg::Vec3d localDown = -localUp;
+
+        // Calculate tilt angle from the angle between look direction and local down
+        // dot product gives cos(angle) between vectors
+        double dot = lookVector * localDown;
+        if (dot > 1.0) dot = 1.0;   // Clamp to valid range for acos
+        if (dot < -1.0) dot = -1.0;
+        _tiltDeg = osg::RadiansToDegrees(std::acos(dot));
+
+        // Enforce tilt constraints: 0° (top-down) to 45° (maximum oblique)
+        if (_tiltDeg < 0.0) _tiltDeg = 0.0;
+        if (_tiltDeg > 45.0) _tiltDeg = 45.0;
+
+        // Determine earth radius from scene bounds (default: Earth's mean radius in meters)
+        double earthRadius = 6371000.0;
+        if (_node.valid())
+        {
+            double r = _node->getBound().center().length();
+            // Only use scene radius if it represents a planetary-scale object
+            if (r > 1000.0)
+            {
+                earthRadius = r;
+            }
+        }
+
+        // Ray-sphere intersection to find where the look vector hits the earth surface
+        // Solve: |eye + t*lookVector|^2 = earthRadius^2
+        // Expanding: a*t^2 + b*t + c = 0
+        double a = 1.0;  // lookVector is normalized, so (lookVector · lookVector) = 1
+        double b = 2.0 * (eye * lookVector);
+        double c = (eye * eye) - (earthRadius * earthRadius);
+
+        double discriminant = b * b - 4 * a * c;
+
+        // Parameter t along ray where intersection occurs
+        double t = -1.0;
+
+        if (discriminant >= 0)
+        {
+            // Two intersection points exist (entry and exit)
+            double t1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
+            double t2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
+
+            // Choose nearest positive intersection (camera looking toward sphere)
+            if (t1 > 0 && t2 > 0)
+                t = std::min(t1, t2);
+            else if (t1 > 0)
+                t = t1;
+            else if (t2 > 0)
+                t = t2;
+        }
+
+        double minDistance = 10.0;
+        
+        // Update manipulator state if valid intersection found
+        if (t > 0)
+        {
+            // Intersection point becomes the new focus center
+            osg::Vec3d groundPoint = eye + lookVector * t;
+            _center = groundPoint;
+            // Distance from camera to center (enforcing minimum)
+            _distance = std::max(t, minDistance);
+        }
+        else
+        {
+            // No valid intersection: reset to default scene bounds
+            resetFromBounds();
+        }
+    }
+
+    void setByInverseMatrix(const osg::Matrixd& matrix) override
+    {
+        setByMatrix(osg::Matrixd::inverse(matrix));
+    }
 
     bool handle(const osgGA::GUIEventAdapter& ea,
                 osgGA::GUIActionAdapter& aa) override
@@ -127,7 +233,7 @@ public:
                 _center -= (east * dx * _distance) + (north * dy * _distance);
             }
 
-            // [Feature from Snippet 2] Tilting
+            // Tilting
             if (ea.getButtonMask() & osgGA::GUIEventAdapter::RIGHT_MOUSE_BUTTON)
             {
                 // Tilt without rotation: adjust tilt angle based on vertical
@@ -175,7 +281,6 @@ public:
         return false;
     }
 
-private:
 private:
     osg::observer_ptr<osg::Node> _node;
     osg::Vec3d _center;
