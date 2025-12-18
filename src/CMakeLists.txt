@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Define the executable target
-add_executable(${PROJECT_NAME} map.cpp landuse.cpp water.cpp roads.cpp buildings.cpp camera_manip.cpp post_process.cpp labels.cpp)
+add_executable(${PROJECT_NAME} map.cpp landuse.cpp water.cpp roads.cpp buildings.cpp camera_manip.cpp post_process.cpp labels.cpp HUD.cpp HUD.h)
 
 # Link against OpenSceneGraph libraries
 # Używamy zmiennej OPENSCENEGRAPH_LIBRARIES, która zawiera pełne ścieżki lub nazwy bibliotek z find_package
