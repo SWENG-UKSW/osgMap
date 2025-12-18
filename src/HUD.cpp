@@ -70,7 +70,7 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
     g_hudText->setColor(osg::Vec4(1, 1, 1, 1));
     g_hudText->setPosition(osg::Vec3(20, winHeight - 40, 0));
     g_hudText->setText("No data"); // default text
-   
+
 
     geode->addDrawable(g_hudText);
 
@@ -120,63 +120,93 @@ bool castCameraRayIntersection(osgViewer::Viewer* viewer, osg::Node* scene,
 std::string getLandInfoAtIntersection(osg::Node* sceneRoot,
                                       const osg::Vec3d& hitPoint)
 {
-    // Find which geometry was hit using an intersection visitor
-    osg::ref_ptr<osgUtil::LineSegmentIntersector> intersector =
-        new osgUtil::LineSegmentIntersector(hitPoint - osg::Vec3d(0, 0, 0.1),
-                                            hitPoint + osg::Vec3d(0, 0, 0.1));
+    std::ostringstream allInfo;
+    int hitCount = 0;
 
-    osgUtil::IntersectionVisitor iv(intersector.get());
+    // Define a box around the hit point
+    double boxSize = 10.0; // Half-width of the box
+
+    // Create polytope (box) around the hit point
+    osg::Polytope polytope;
+    polytope.add(
+        osg::Plane(osg::Vec3d(1, 0, 0), -(hitPoint.x() - boxSize))); // left
+    polytope.add(
+        osg::Plane(osg::Vec3d(-1, 0, 0), (hitPoint.x() + boxSize))); // right
+    polytope.add(
+        osg::Plane(osg::Vec3d(0, 1, 0), -(hitPoint.y() - boxSize))); // bottom
+    polytope.add(
+        osg::Plane(osg::Vec3d(0, -1, 0), (hitPoint.y() + boxSize))); // top
+    polytope.add(
+        osg::Plane(osg::Vec3d(0, 0, 1), -(hitPoint.z() - boxSize))); // near
+    polytope.add(
+        osg::Plane(osg::Vec3d(0, 0, -1), (hitPoint.z() + boxSize))); // far
+
+    // Create the intersector
+    osg::ref_ptr<osgUtil::PolytopeIntersector> picker =
+        new osgUtil::PolytopeIntersector(osgUtil::Intersector::MODEL, polytope);
+
+    osgUtil::IntersectionVisitor iv(picker.get());
     sceneRoot->accept(iv);
 
-    if (intersector->containsIntersections())
+    if (picker->containsIntersections())
     {
-        const osgUtil::LineSegmentIntersector::Intersection& hit =
-            intersector->getFirstIntersection();
+        std::set<osgSim::ShapeAttributeList*> processedSAL;
 
-        // Get the drawable that was hit
-        osg::Node* hitNode = nullptr;
-        if (!hit.nodePath.empty())
+        for (const auto& intersection : picker->getIntersections())
         {
-            // Walk up the node path to find a node with UserData
-            for (auto it = hit.nodePath.rbegin(); it != hit.nodePath.rend();
-                 ++it)
+            if (!intersection.nodePath.empty())
             {
-                osgSim::ShapeAttributeList* sal =
-                    dynamic_cast<osgSim::ShapeAttributeList*>(
-                        (*it)->getUserData());
-
-                if (sal)
+                // Walk up the node path to find UserData
+                for (auto it = intersection.nodePath.rbegin();
+                     it != intersection.nodePath.rend(); ++it)
                 {
-                    hitNode = *it;
-                    std::ostringstream info;
+                    osgSim::ShapeAttributeList* sal =
+                        dynamic_cast<osgSim::ShapeAttributeList*>(
+                            (*it)->getUserData());
 
-                    // Extract all attributes
-                    for (unsigned j = 0; j < sal->size(); j++)
+                    if (sal && processedSAL.find(sal) == processedSAL.end())
                     {
-                        const osgSim::ShapeAttribute& attr = (*sal)[j];
-                        info << attr.getName() << ": ";
-
-                        switch (attr.getType())
+                        processedSAL.insert(sal);
+                        hitCount++;
+                        bool hasData = false;
+                        for (unsigned j = 0; j < sal->size(); j++)
                         {
-                            case osgSim::ShapeAttribute::STRING:
-                                info << attr.getString();
-                                break;
-                            case osgSim::ShapeAttribute::INTEGER:
-                                info << attr.getInt();
-                                break;
-                            case osgSim::ShapeAttribute::DOUBLE:
-                                info << attr.getDouble();
-                                break;
-                            default: info << "unknown type";
+                            const osgSim::ShapeAttribute& attr = (*sal)[j];
+                            std::string attrName = attr.getName();
+
+                            if (attrName == "osm_id" || attrName == "code"
+                                || attrName == "id")
+                                continue;
+
+                            hasData = true;
+                            allInfo << attrName << ": ";
+
+                            switch (attr.getType())
+                            {
+                                case osgSim::ShapeAttribute::STRING:
+                                    allInfo << attr.getString();
+                                    break;
+                                case osgSim::ShapeAttribute::INTEGER:
+                                    allInfo << attr.getInt();
+                                    break;
+                                case osgSim::ShapeAttribute::DOUBLE:
+                                    allInfo << attr.getDouble();
+                                    break;
+                                default: allInfo << "unknown type";
+                            }
+                            allInfo << "\n";
                         }
-                        info << "\n";
+
+                        if (hasData) allInfo << "\n";
+
+                        break; // Found UserData, move to next intersection
                     }
-                    std::cout << info.str();
-                    return info.str();
                 }
             }
         }
     }
+
+    if (hitCount > 0) return allInfo.str();
 
     return "No land data found at intersection";
 }
