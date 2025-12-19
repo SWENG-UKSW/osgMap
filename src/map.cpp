@@ -171,10 +171,8 @@ int main(int argc, char** argv)
 
         // Wrap the key switch manipulator inside your movement tracker
         viewer->setCameraManipulator(keyswitchManipulator.get());
-
     }
-    
-    
+
 
     // add the state manipulator
     viewer->addEventHandler(new osgGA::StateSetManipulator(
@@ -218,23 +216,31 @@ int main(int argc, char** argv)
     /////////////////////////////////////////////////////////////////////
 
     osg::MatrixTransform* root = new osg::MatrixTransform;
-    osg::Matrixd _ltw;
-    osg::ref_ptr<osg::Node> land_model = process_landuse(_ltw, file_path);
-    root->setMatrix(_ltw);
+    osg::Matrixd ltw;
+    osg::BoundingBox wbb;
+    osg::ref_ptr<osg::Node> land_model = process_landuse(ltw, wbb, file_path);
+    root->setMatrix(ltw);
     root->addChild(land_model);
 
-    osg::ref_ptr<osg::Node> water_model = process_water(_ltw, file_path);
+    osg::ref_ptr<osg::Node> water_model = process_water(ltw, file_path);
     root->addChild(water_model);
 
-    osg::ref_ptr<osg::Node> roads_model = process_roads(_ltw, file_path);
+    osg::ref_ptr<osg::Node> roads_model = process_roads(ltw, file_path);
     root->addChild(roads_model);
 
-    osg::ref_ptr<osg::Node> buildings_model =
-        process_buildings(_ltw, file_path);
+    osg::ref_ptr<osg::Node> buildings_model = process_buildings(ltw, file_path);
     root->addChild(buildings_model);
 
-    osg::ref_ptr<osg::Node> labels_model = process_labels(_ltw, file_path);
+    osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
     root->addChild(labels_model);
+
+
+    osg::Vec3d wtrans = wbb.center();
+    wtrans.normalize();
+    viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
+    viewer->getLight()->setPosition(
+        osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
+
 
     // any option left unread are converted into errors to write out later.
     arguments.reportRemainingOptionsAsUnrecognized();
@@ -261,12 +267,11 @@ int main(int argc, char** argv)
     int h = viewer->getCamera()->getViewport()->height();
 
     // 5. Create HUD
-    osg::Camera* hud = createHUD("images/logo.png",0.3f, w, h); // or scaling version
+    osg::Camera* hud = createHUD("images/logo.png", 0.3f, w, h); // or scaling version
 
     // 6. Add HUD AFTER realize() (totally allowed)
     finalRoot->addChild(hud);
 
- 
 
     // 7. Main loop
     bool wasMoving = false;
