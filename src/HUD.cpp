@@ -61,15 +61,12 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
     osg::ref_ptr<osg::StateSet> ss = geode->getOrCreateStateSet();
     ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
-
-
-    osg::notify(osg::WARN) << "Done " << std::endl;
-
     g_hudText = new osgText::Text;
+    g_hudText->setFont("font/OpenSans-VariableFont_wdth,wght.ttf");
     g_hudText->setCharacterSize(28.0f);
     g_hudText->setColor(osg::Vec4(1, 1, 1, 1));
     g_hudText->setPosition(osg::Vec3(20, winHeight - 40, 0));
-    g_hudText->setText("No data"); // default text
+    g_hudText->setText(L"Zacznij ruch kamerą aby pobrać dane na temat terenu"); // default text
 
 
     geode->addDrawable(g_hudText);
@@ -81,7 +78,8 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
 
 void hudSetText(const std::string& text)
 {
-    if (g_hudText.valid()) g_hudText->setText(text);
+    if (g_hudText.valid()) 
+        g_hudText->setText(osgText::String(text, osgText::String::ENCODING_UTF8));
 }
 
 bool castCameraRayIntersection(osgViewer::Viewer* viewer, osg::Node* scene,
