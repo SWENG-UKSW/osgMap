@@ -194,15 +194,14 @@ int main(int argc, char** argv)
     osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
     root->addChild(labels_model);
 
-
     osg::Vec3d wtrans = wbb.center();
     wtrans.normalize();
     viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
     viewer->getLight()->setPosition(osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
-
-
-
-
+    viewer->getLight()->setDirection(osg::Vec3(wtrans[0], wtrans[1], wtrans[2]));
+    viewer->getLight()->setAmbient(osg::Vec4(0.2f,0.2f,0.2f,1.0f));
+    viewer->getLight()->setDiffuse(osg::Vec4(0.8f,0.8f,0.8f,1.0f));
+    viewer->getLight()->setSpecular(osg::Vec4(0.5f,0.5f,0.5f,1.0f));
 
     // any option left unread are converted into errors to write out later.
     arguments.reportRemainingOptionsAsUnrecognized();
