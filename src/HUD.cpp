@@ -1,4 +1,5 @@
 #include "HUD.h"
+#include "common.h"
 
 
 osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
@@ -25,8 +26,6 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
     }
 
     osg::ref_ptr<osg::Texture2D> tex = new osg::Texture2D(image);
-    tex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
-    tex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
 
     // --- Quad Geometry (top-right corner) ---
     float w = image->s() * scale;
@@ -61,6 +60,8 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
     osg::ref_ptr<osg::StateSet> ss = geode->getOrCreateStateSet();
     ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+    ss->setMode(GL_BLEND, osg::StateAttribute::ON);
+    ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
     g_hudText = new osgText::Text;
     g_hudText->setFont("font/OpenSans-VariableFont_wdth,wght.ttf");
     g_hudText->setCharacterSize(28.0f);
@@ -82,38 +83,32 @@ void hudSetText(const std::string& text)
         g_hudText->setText(osgText::String(text, osgText::String::ENCODING_UTF8));
 }
 
-bool castCameraRayIntersection(osgViewer::Viewer* viewer, osg::Node* scene,
-                               osg::Vec3d& out_point, osg::Vec3d& out_normal)
+static inline void ltrim(std::string& s)
 {
-    osg::Camera* cam = viewer->getCamera();
-
-    // 1. Get view matrix and extract eye/center/up
-    osg::Vec3d eye, center, up;
-    cam->getViewMatrixAsLookAt(eye, center, up);
-
-    osg::Vec3d dir = center - eye;
-    dir.normalize();
-
-    // 2. Build long ray
-    osg::Vec3d start = eye;
-    osg::Vec3d end = eye + dir * 1e6; // long ray
-
-    // 3. Create intersector
-    osg::ref_ptr<osgUtil::LineSegmentIntersector> intersector =
-        new osgUtil::LineSegmentIntersector(start, end);
-
-    osgUtil::IntersectionVisitor iv(intersector.get());
-    scene->accept(iv);
-
-    if (!intersector->containsIntersections()) return false;
-
-    const auto& result = *intersector->getIntersections().begin();
-
-    out_point = result.getWorldIntersectPoint();
-    out_normal = result.getWorldIntersectNormal();
-
-    return true;
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+                return !std::isspace(ch);
+            }));
 }
+static inline void rtrim(std::string& s)
+{
+    s.erase(std::find_if(s.rbegin(), s.rend(),
+                         [](unsigned char ch) { return !std::isspace(ch); })
+                .base(),
+            s.end());
+}
+static inline void trim(std::string& s)
+{
+    ltrim(s);
+    rtrim(s);
+}
+
+std::string translateFclass(const std::string& fclass)
+{
+    auto it = fclassPL.find(fclass);
+    if (it != fclassPL.end()) return it->second;
+    return fclass;
+}
+
 
 std::string getLandInfoAtIntersection(osg::Node* sceneRoot,
                                       const osg::Vec3d& hitPoint)
@@ -122,83 +117,77 @@ std::string getLandInfoAtIntersection(osg::Node* sceneRoot,
     int hitCount = 0;
 
     // Define a box around the hit point
-    double boxSize = 10.0; // Half-width of the box
-
-    // Create polytope (box) around the hit point
-    osg::Polytope polytope;
-    polytope.add(
-        osg::Plane(osg::Vec3d(1, 0, 0), -(hitPoint.x() - boxSize))); // left
-    polytope.add(
-        osg::Plane(osg::Vec3d(-1, 0, 0), (hitPoint.x() + boxSize))); // right
-    polytope.add(
-        osg::Plane(osg::Vec3d(0, 1, 0), -(hitPoint.y() - boxSize))); // bottom
-    polytope.add(
-        osg::Plane(osg::Vec3d(0, -1, 0), (hitPoint.y() + boxSize))); // top
-    polytope.add(
-        osg::Plane(osg::Vec3d(0, 0, 1), -(hitPoint.z() - boxSize))); // near
-    polytope.add(
-        osg::Plane(osg::Vec3d(0, 0, -1), (hitPoint.z() + boxSize))); // far
-
-    // Create the intersector
+    osg::Viewport* viewport = viewer->getCamera()->getViewport();
+    double dx = viewport->width() * 0.05;
+    double dy = viewport->height() * 0.05;
+    double y = viewport->x() + viewport->width() * 0.5;
+    double x = viewport->x() + viewport->height() * 0.5;
     osg::ref_ptr<osgUtil::PolytopeIntersector> picker =
-        new osgUtil::PolytopeIntersector(osgUtil::Intersector::MODEL, polytope);
-
+        new osgUtil::PolytopeIntersector(osgUtil::Intersector::WINDOW,
+                                         x - dx * 0.5, y - dy * 0.5,
+                                         x + dx * 0.5, y + dy * 0.5);
     osgUtil::IntersectionVisitor iv(picker.get());
-    sceneRoot->accept(iv);
+    viewer->getCamera()->accept(iv);
 
     if (picker->containsIntersections())
     {
         std::set<osgSim::ShapeAttributeList*> processedSAL;
-
+        std::set<std::pair<std::string, std::string>> globalRecords;
+        constexpr std::size_t MAX_RECORDS = 3;
+        std::size_t collectedCount = 0;
         for (const auto& intersection : picker->getIntersections())
         {
-            if (!intersection.nodePath.empty())
+            if (intersection.drawable.valid())
             {
-                // Walk up the node path to find UserData
-                for (auto it = intersection.nodePath.rbegin();
-                     it != intersection.nodePath.rend(); ++it)
+                osgSim::ShapeAttributeList* sal =
+                    dynamic_cast<osgSim::ShapeAttributeList*>(
+                        intersection.drawable->getUserData());
+                if (sal && processedSAL.find(sal) == processedSAL.end())
                 {
-                    osgSim::ShapeAttributeList* sal =
-                        dynamic_cast<osgSim::ShapeAttributeList*>(
-                            (*it)->getUserData());
-
-                    if (sal && processedSAL.find(sal) == processedSAL.end())
+                    processedSAL.insert(sal);
+                    hitCount++;
+                    bool hasData = false;
+                    std::string fclass;
+                    for (unsigned j = 0; j < sal->size(); j++)
                     {
-                        processedSAL.insert(sal);
-                        hitCount++;
-                        bool hasData = false;
-                        for (unsigned j = 0; j < sal->size(); j++)
+                        const osgSim::ShapeAttribute& attr = (*sal)[j];
+                        std::string attrName = attr.getName();
+                        if (attrName != "fclass") continue;
+                        if (attr.getType() == osgSim::ShapeAttribute::STRING)
                         {
-                            const osgSim::ShapeAttribute& attr = (*sal)[j];
-                            std::string attrName = attr.getName();
-
-                            if (attrName == "osm_id" || attrName == "code"
-                                || attrName == "id")
-                                continue;
-
-                            hasData = true;
-                            allInfo << attrName << ": ";
-
-                            switch (attr.getType())
-                            {
-                                case osgSim::ShapeAttribute::STRING:
-                                    allInfo << attr.getString();
-                                    break;
-                                case osgSim::ShapeAttribute::INTEGER:
-                                    allInfo << attr.getInt();
-                                    break;
-                                case osgSim::ShapeAttribute::DOUBLE:
-                                    allInfo << attr.getDouble();
-                                    break;
-                                default: allInfo << "unknown type";
-                            }
-                            allInfo << "\n";
+                            fclass = attr.getString();
+                            trim(fclass);
                         }
-
-                        if (hasData) allInfo << "\n";
-
-                        break; // Found UserData, move to next intersection
+                        break;
                     }
+                    if (fclass.empty()) continue;
+                    for (unsigned j = 0; j < sal->size(); j++)
+                    {
+                        const osgSim::ShapeAttribute& attr = (*sal)[j];
+                        std::string attrName = attr.getName();
+                        if (attrName != "name") continue;
+                        if (attr.getType() == osgSim::ShapeAttribute::STRING)
+                        {
+                            std::string att = attr.getString();
+                            trim(att);
+                            if (!att.empty())
+                            {   
+                                if (collectedCount >= MAX_RECORDS)
+                                    break; // stop processing intersections
+                                auto key = std::make_pair(fclass, att);
+
+                                if (!globalRecords.insert(key).second)
+                                    continue;
+               
+                                std::string fclassPL = translateFclass(fclass);
+                                allInfo << fclassPL << ": " << att;
+                                ++collectedCount;
+                                hasData = true;
+                            }
+                        }
+                        break;
+                    }
+                    if (hasData) allInfo << "\n";
                 }
             }
         }
@@ -208,4 +197,7 @@ std::string getLandInfoAtIntersection(osg::Node* sceneRoot,
 
     return "No land data found at intersection";
 }
+
+
+
 
