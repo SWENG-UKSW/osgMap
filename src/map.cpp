@@ -268,12 +268,18 @@ int main(int argc, char** argv)
     viewer->realize();
 
     // 4. Now viewport exists → safe to read size
+    
     int w = viewer->getCamera()->getViewport()->width();
     int h = viewer->getCamera()->getViewport()->height();
-
     // 5. Create HUD
-    osg::Camera* hud =
-        createHUD("images/logo.png", 0.3f, w, h); // or scaling version
+    osg::Camera* hud = createHUD("images/logo.png", 0.3f, w, h);
+
+    // Find the geode in the HUD (you might need to store it during creation)
+    osg::Geode* hudGeode = dynamic_cast<osg::Geode*>(hud->getChild(0));
+
+    // Add resize handler
+    viewer->addEventHandler(
+        new HUDResizeHandler(hud, hudGeode, "images/logo.png", 0.3f));
 
     // 6. Add HUD AFTER realize() (totally allowed)
     finalRoot->addChild(hud);
