@@ -141,11 +141,11 @@ const std::unordered_map<std::string, std::string> fclassPL = {
 // Simplified HUDResizeHandler class - add this to HUD.h
 class HUDResizeHandler : public osgGA::GUIEventHandler {
 public:
-    HUDResizeHandler(osg::Group* root, const std::string& logoFile, float scale)
-        : _root(root), _logoFile(logoFile), _scale(scale), _hudCamera(nullptr)
+    HUDResizeHandler(osg::Camera* hudCamera, osg::Geode* geode,
+                     const std::string& logoFile, float scale)
+        : _hudCamera(hudCamera), _geode(geode), _logoFile(logoFile),
+          _scale(scale)
     {}
-
-    void setHUDCamera(osg::Camera* hud) { _hudCamera = hud; }
 
     virtual bool handle(const osgGA::GUIEventAdapter& ea,
                         osgGA::GUIActionAdapter& aa)
@@ -155,19 +155,23 @@ public:
             int width = ea.getWindowWidth();
             int height = ea.getWindowHeight();
 
-            // Remove old HUD if it exists
-            if (_hudCamera && _root.valid())
+            // Get the parent (should be the root group)
+            if (_hudCamera && _hudCamera->getNumParents() > 0)
             {
-                _root->removeChild(_hudCamera);
-            }
+                osg::Group* parent = _hudCamera->getParent(0);
 
-            // Create new HUD with updated dimensions
-            _hudCamera = createHUD(_logoFile, _scale, width, height);
+                // Remove old HUD
+                parent->removeChild(_hudCamera);
 
-            // Add new HUD to scene
-            if (_root.valid() && _hudCamera)
-            {
-                _root->addChild(_hudCamera);
+                // Create new HUD with updated dimensions
+                _hudCamera = createHUD(_logoFile, _scale, width, height);
+
+                // Update geode reference (it's the first child of the new
+                // camera)
+                _geode = dynamic_cast<osg::Geode*>(_hudCamera->getChild(0));
+
+                // Add new HUD back to parent
+                parent->addChild(_hudCamera);
             }
 
             return false; // Allow other handlers to process this event
@@ -176,9 +180,9 @@ public:
     }
 
 private:
-    osg::observer_ptr<osg::Group> _root;
+    osg::Camera* _hudCamera;
+    osg::Geode* _geode;
     std::string _logoFile;
     float _scale;
-    osg::ref_ptr<osg::Camera> _hudCamera;
 };
 #endif
