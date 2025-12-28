@@ -3,28 +3,32 @@
 
 // hud.vert
 static const char* hudVertShader = R"(
-#version 120
+#version 420 compatibility
+out vec2 v_tc;
+out vec4 v_col;
 void main()
 {
     gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-    gl_TexCoord[0] = gl_MultiTexCoord0;
-    gl_FrontColor = gl_Color;
+    v_tc = gl_MultiTexCoord0.xy;
+    v_col = gl_Color;
 }
 )";
-
 static const char* hudFragShader = R"(
-#version 120
+#version 420 compatibility
 uniform sampler2D texture0;
 uniform float u_alpha;
-
+in vec2 v_tc;
+in vec4 v_col;
+out vec4 fragColor;
 void main()
 {
-    vec4 tex = texture2D(texture0, gl_TexCoord[0].st);
+    vec4 tex = texture2D(texture0, v_tc);
     tex.a *= u_alpha;
-    gl_FragColor = tex * gl_Color;
-}
-)";
+    fragColor = vec4(v_col.rgb, tex.a);
+})";
 osg::ref_ptr<osg::Uniform> g_hudAlpha;
+osg::ref_ptr<osgText::Text> g_hudText;
+osg::ref_ptr<osgText::Text> g_hudTextShd;
 
 osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
                        int winHeight)
@@ -82,54 +86,43 @@ osg::Camera* createHUD(const std::string& logoFile, float scale, int winWidth,
     // geode->addDrawable(bgQuad);
     geode->addDrawable(quad);
 
-    osg::ref_ptr<osg::StateSet> ss = geode->getOrCreateStateSet();
-    osg::ref_ptr<osg::Program> program = new osg::Program;
-    program->addShader(new osg::Shader(osg::Shader::VERTEX, hudVertShader));
-    program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hudFragShader));
-
-
-    ss->setAttributeAndModes(program.get(), osg::StateAttribute::ON);
-
+   osg::ref_ptr<osg::StateSet> ss = geode->getOrCreateStateSet();
     // Alpha uniform (start hidden)
     osg::ref_ptr<osg::Uniform> alphaUniform = new osg::Uniform("u_alpha", 0.0f);
-
     ss->addUniform(alphaUniform.get());
     g_hudAlpha = alphaUniform;
-
-    // Texture sampler
     ss->addUniform(new osg::Uniform("texture0", 0));
+    // Texture sampler
     ss->setTextureAttributeAndModes(0, tex.get(), osg::StateAttribute::ON);
     ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
     ss->setMode(GL_BLEND, osg::StateAttribute::ON);
-    ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+    ss->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
+    osgText::Font* font =
+        osgText::readFontFile("font/OpenSans-VariableFont_wdth,wght.ttf");
+    float shdOff = winWidth * 0.0013f;
+    osg::Vec3f tpos(20, winHeight - 40, 0);
+    // White text + black "shadow"
     g_hudText = new osgText::Text;
-    g_hudText->setDataVariance(osg::Object::DYNAMIC);
-    g_hudText->setUseDisplayList(false);
-
-    osg::StateSet* textSS = g_hudText->getOrCreateStateSet();
-
-    textSS->setMode(GL_BLEND, osg::StateAttribute::ON);
-    textSS->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
-
-    // Important: disable depth test for HUD text
-    textSS->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
-    textSS->addUniform(alphaUniform.get()); 
-    g_hudText->setFont("font/OpenSans-VariableFont_wdth,wght.ttf");
+    g_hudText->setFont(font);
     g_hudText->setCharacterSize(36.0f);
     g_hudText->setColor(osg::Vec4(1, 1, 1, 1)); // White text
-
-    // Add black outline
-    g_hudText->setBackdropType(osgText::Text::OUTLINE);
-    g_hudText->setBackdropColor(osg::Vec4(0, 0, 0, 1)); // Black outline
-    g_hudText->setBackdropOffset(
-        0.08f); // Adjust thickness (0.05-0.15 works well)
-
-    g_hudText->setPosition(osg::Vec3(20, winHeight - 40, 0));
-    g_hudText->setText(
-        "Move the camera in order to gather data about terrain"); // default
-                                                                  // text
-
-
+    g_hudText->setPosition(tpos);
+    g_hudText->setText("");
+    g_hudTextShd = new osgText::Text;
+    g_hudTextShd->setFont(font);
+    g_hudTextShd->setCharacterSize(36.0f);
+    g_hudTextShd->setColor(osg::Vec4(0, 0, 0, 1));
+    g_hudTextShd->setPosition(tpos + osg::Vec3(shdOff, -shdOff, 0));
+    g_hudTextShd->setText("");
+    // Shaders setup
+    osg::ref_ptr<osg::Program> program = new osg::Program;
+    program->addShader(new osg::Shader(osg::Shader::VERTEX, hudVertShader));
+    program->addShader(new osg::Shader(osg::Shader::FRAGMENT, hudFragShader));
+    g_hudText->getOrCreateStateSet()->setAttributeAndModes(program.get());
+    g_hudTextShd->getOrCreateStateSet()->setAttributeAndModes(program.get());
+    g_hudTextShd->getOrCreateStateSet()->setRenderBinDetails(0, "RenderBin");
+    g_hudText->getOrCreateStateSet()->setRenderBinDetails(1, "RenderBin");
+    geode->addDrawable(g_hudTextShd);
     geode->addDrawable(g_hudText);
 
     hudCamera->addChild(geode);
@@ -142,6 +135,8 @@ void hudSetText(const std::string& text)
     if (g_hudText.valid())
     {
         g_hudText->setText(
+            osgText::String(text, osgText::String::ENCODING_UTF8));
+        g_hudTextShd->setText(
             osgText::String(text, osgText::String::ENCODING_UTF8));
     }
 }
