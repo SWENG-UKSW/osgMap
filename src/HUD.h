@@ -53,7 +53,6 @@ const std::unordered_map<std::string, std::string> fclassPL = {
     { "service", "połączenie" },
     { "water", "wody" },
     { "retail", "sprzedawca" },
-    { "service", "połączenie" },
     { "track_grade1", "droga" },
     { "track_grade2", "droga drugorzędna" },
     { "track_grade3", "droga trzeciorzędna" },
@@ -66,19 +65,87 @@ const std::unordered_map<std::string, std::string> fclassPL = {
     { "quarry", "kamieniołom" },
     { "recreation_ground", u8"pole rekreacyjne" },
     { "meadow", "łąka" },
-    { "grass", "łąka" },
-    { "grass", "łąka" },
-    { "cycleway", "ścieżka rowerowa" }
+    { "mall", "centrum handlowe" },
+    { "christian", "łąka" },
+    { "cycleway", "ścieżka rowerowa" },
+    { "military", "obiekt wojskowy" },
+    { "farmyard", "podwórze gospodarskie" },
+    { "swimming_pool", "basen" },
+    { "kindergarten", "przedszkole" },
+    { "school", "szkoła" },
+    { "pitch", "boisko" },
+    { "theatre", "teatr" },
+    { "car_wash", "myjnia" },
+    { "attraction", "atrakcja turystyczna" },
+    { "graveyard", "cmentarz" },
+    { "fountain", "fontanna" },
+    { "bakery", "piekarnia" },
+    { "castle", "zamek" },
+    { "dentist", "dentysta" },
+
+    // ---- Added from CSV ----
+    { "airport", "lotnisko" },
+    { "apron", "płyta lotniska" },
+    { "arts_centre", "centrum sztuki" },
+    { "artwork", "dzieło sztuki" },
+    { "bank", "bank" },
+    { "bar", "bar" },
+    { "beach", "plaża" },
+    { "beauty_shop", "salon kosmetyczny" },
+    { "bench", "ławka" },
+    { "beverages", "napoje" },
+    { "bicycle_rental", "wypożyczalnia rowerów" },
+    { "bicycle_shop", "sklep rowerowy" },
+    { "biergarten", "ogródek piwny" },
+    { "bookshop", "księgarnia" },
+    { "buddhist", "obiekt buddyjski" },
+    { "bus_station", "dworzec autobusowy" },
+    { "butcher", "rzeźnik" },
+    { "cafe", "kawiarnia" },
+    { "camp_site", "pole namiotowe" },
+    { "car_repair", "warsztat samochodowy" },
+    { "car_sharing", "carsharing" },
+    { "charging_station", "stacja ładowania" },
+    { "cinema", "kino" },
+    { "college", "uczelnia" },
+    { "community_centre", "centrum społecznościowe" },
+    { "construction", "teren budowy" },
+    { "convenience", "sklep spożywczy" },
+    { "courthouse", "sąd" },
+    { "fast_food", "fast food" },
+    { "fire_station", "straż pożarna" },
+    { "florist", "kwiaciarnia" },
+    { "fuel", "stacja paliw" },
+    { "hospital", "szpital" },
+    { "hotel", "hotel" },
+    { "information", "informacja" },
+    { "library", "biblioteka" },
+    { "marketplace", "targowisko" },
+    { "museum", "muzeum" },
+    { "parking", "parking" },
+    { "pharmacy", "apteka" },
+    { "place_of_worship", "miejsce kultu" },
+    { "police", "policja" },
+    { "post_office", "poczta" },
+    { "pub", "pub" },
+    { "restaurant", "restauracja" },
+    { "supermarket", "supermarket" },
+    { "taxi", "postój taksówek" },
+    { "townhall", "ratusz" },
+    { "university", "uniwersytet" },
+    { "viewpoint", "punkt widokowy" },
+    { "zoo", "zoo" }
 };
+
 // Create a resize handler class
+// Simplified HUDResizeHandler class - add this to HUD.h
 class HUDResizeHandler : public osgGA::GUIEventHandler {
 public:
-    HUDResizeHandler(osg::Camera* hudCamera, osg::Geode* geode,
-                     const std::string& logoFile, float scale)
-        : _hudCamera(hudCamera), _geode(geode), _logoFile(logoFile),
-          _scale(scale), _textMarginLeft(20.0f), _textMarginTop(40.0f),
-          _logoMarginRight(20.0f), _logoMarginTop(20.0f)
+    HUDResizeHandler(osg::Group* root, const std::string& logoFile, float scale)
+        : _root(root), _logoFile(logoFile), _scale(scale), _hudCamera(nullptr)
     {}
+
+    void setHUDCamera(osg::Camera* hud) { _hudCamera = hud; }
 
     virtual bool handle(const osgGA::GUIEventAdapter& ea,
                         osgGA::GUIActionAdapter& aa)
@@ -88,116 +155,30 @@ public:
             int width = ea.getWindowWidth();
             int height = ea.getWindowHeight();
 
-            // Update HUD camera projection to match new window size
-            _hudCamera->setProjectionMatrix(
-                osg::Matrix::ortho2D(0, width, 0, height));
+            // Remove old HUD if it exists
+            if (_hudCamera && _root.valid())
+            {
+                _root->removeChild(_hudCamera);
+            }
 
-            // Reposition and resize all HUD elements
-            updateHUDElements(width, height);
+            // Create new HUD with updated dimensions
+            _hudCamera = createHUD(_logoFile, _scale, width, height);
+
+            // Add new HUD to scene
+            if (_root.valid() && _hudCamera)
+            {
+                _root->addChild(_hudCamera);
+            }
 
             return false; // Allow other handlers to process this event
         }
         return false;
     }
 
-    // Allow customization of margins
-    void setTextMargins(float left, float top)
-    {
-        _textMarginLeft = left;
-        _textMarginTop = top;
-    }
-
-    void setLogoMargins(float right, float top)
-    {
-        _logoMarginRight = right;
-        _logoMarginTop = top;
-    }
-
 private:
-    void updateHUDElements(int winWidth, int winHeight)
-    {
-        // Process all drawables in the geode
-        for (unsigned int i = 0; i < _geode->getNumDrawables(); i++)
-        {
-            osg::Drawable* drawable = _geode->getDrawable(i);
-
-            // Update logo quad (geometry with texture)
-            if (osg::Geometry* quad = dynamic_cast<osg::Geometry*>(drawable))
-            {
-                updateLogoQuad(quad, winWidth, winHeight);
-            }
-
-            // Update text position (upper left corner)
-            if (osgText::Text* text = dynamic_cast<osgText::Text*>(drawable))
-            {
-                updateTextPosition(text, winWidth, winHeight);
-            }
-        }
-    }
-
-    void updateLogoQuad(osg::Geometry* quad, int winWidth, int winHeight)
-    {
-        osg::Vec3Array* verts =
-            dynamic_cast<osg::Vec3Array*>(quad->getVertexArray());
-
-        if (!verts || verts->size() != 4) return;
-
-        // Check if this geometry has a texture (identifies it as the logo)
-        osg::StateSet* stateSet = quad->getStateSet();
-        if (!stateSet) return;
-
-        osg::Texture2D* tex = dynamic_cast<osg::Texture2D*>(
-            stateSet->getTextureAttribute(0, osg::StateAttribute::TEXTURE));
-
-        if (!tex || !tex->getImage()) return;
-
-        // Calculate scaled logo dimensions
-        float logoWidth = tex->getImage()->s() * _scale;
-        float logoHeight = tex->getImage()->t() * _scale;
-
-        // Position in upper right corner
-        // x1 is left edge, x2 is right edge
-        float x1 = winWidth - logoWidth - _logoMarginRight;
-        float x2 = winWidth - _logoMarginRight;
-
-        // y1 is bottom edge, y2 is top edge
-        float y1 = winHeight - logoHeight - _logoMarginTop;
-        float y2 = winHeight - _logoMarginTop;
-
-        // Update vertex positions (counter-clockwise quad)
-        (*verts)[0] = osg::Vec3(x1, y1, 0); // bottom-left
-        (*verts)[1] = osg::Vec3(x2, y1, 0); // bottom-right
-        (*verts)[2] = osg::Vec3(x2, y2, 0); // top-right
-        (*verts)[3] = osg::Vec3(x1, y2, 0); // top-left
-
-        // Mark arrays as modified
-        verts->dirty();
-        quad->dirtyBound();
-    }
-
-    void updateTextPosition(osgText::Text* text, int winWidth, int winHeight)
-    {
-        // Position text in upper left corner
-        // Y coordinate is measured from bottom, so we subtract margin from
-        // height
-        float xPos = _textMarginLeft;
-        float yPos = winHeight - _textMarginTop;
-
-        text->setPosition(osg::Vec3(xPos, yPos, 0));
-
-        // Optionally adjust text alignment to ensure it stays within bounds
-        text->setAlignment(osgText::Text::LEFT_TOP);
-    }
-
-    osg::Camera* _hudCamera;
-    osg::Geode* _geode;
+    osg::observer_ptr<osg::Group> _root;
     std::string _logoFile;
     float _scale;
-
-    // Configurable margins
-    float _textMarginLeft;
-    float _textMarginTop;
-    float _logoMarginRight;
-    float _logoMarginTop;
+    osg::ref_ptr<osg::Camera> _hudCamera;
 };
 #endif
