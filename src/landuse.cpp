@@ -1,10 +1,10 @@
-/* Poruszanie siê po mapie,
-    aby móc siê pochyliæ :
-Naciœnij klawisz 5 na klawiaturze, aby zmieniæ tryb poruszania siê
-Naciœniêcie scrolla s³u¿y do poruszania siê po mapie
-Naciœniêcie LPM s³u¿y do nachylania siê na mapie podmró¿nymi k¹tami
-Naciœniêcie PPM s³u¿y do oddalania i przybli¿ania.
-Aby uzyskaæ wiêcej informacji o nawigowaniu po mapie naciœnij h.
+/* Poruszanie siï¿½ po mapie,
+    aby mï¿½c siï¿½ pochyliï¿½ :
+Naciï¿½nij klawisz 5 na klawiaturze, aby zmieniï¿½ tryb poruszania siï¿½
+Naciï¿½niï¿½cie scrolla sï¿½uï¿½y do poruszania siï¿½ po mapie
+Naciï¿½niï¿½cie LPM sï¿½uï¿½y do nachylania siï¿½ na mapie podmrï¿½nymi kï¿½tami
+Naciï¿½niï¿½cie PPM sï¿½uï¿½y do oddalania i przybliï¿½ania.
+Aby uzyskaï¿½ wiï¿½cej informacji o nawigowaniu po mapie naciï¿½nij h.
     */
 #include <osgDB/ReadFile>
 #include <osgUtil/Optimizer>
@@ -226,7 +226,54 @@ osg::Node* process_landuse(osg::Matrixd& ltw, osg::BoundingBox& wbb,
             apply_texture(ss, file_path + "/textures/grass.jpg");
             setup_wind_shader(ss, file_path);
         }
-        // 3. CMENTARZ
+        // 2b. TERENY REKREACYJNE (Å»ywa zieleÅ„)
+        else if (name.find("recreation_ground") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/sport_green.jpg");
+            setup_wind_shader(ss, file_path);
+        }
+        // --- NOWE TYPY (Distinct Textures) ---
+        // 3a. ROLNICTWO (BrÄ…z)
+        else if (name.find("farmland") != std::string::npos
+                 || name.find("farmyard") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/farmland.jpg");
+            setup_standard_shader(ss, file_path);
+        }
+        // 3b. ZAROÅšLA (Ciemna zieleÅ„)
+        else if (name.find("scrub") != std::string::npos
+                 || name.find("heath") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/scrub.jpg");
+            setup_wind_shader(ss, file_path);
+        }
+        // 3c. DZIAÅKI (Oliwkowy)
+        else if (name.find("allotments") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/allotments.jpg");
+            setup_wind_shader(ss, file_path);
+        }
+        // 3d. SADY I REZERWATY (LeÅ›na zieleÅ„)
+        else if (name.find("orchard") != std::string::npos
+                 || name.find("nature_reserve") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/orchard.jpg");
+            setup_wind_shader(ss, file_path);
+        }
+        // 3e. WOJSKO (Khaki)
+        else if (name.find("military") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/military.jpg");
+            setup_standard_shader(ss, file_path);
+        }
+        // 3f. SKAÅY (Szary)
+        else if (name.find("quarry") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/rock.jpg");
+            setup_standard_shader(ss, file_path);
+        }
+        // -----------------
+        // 4. CMENTARZ
         else if (name.find("cemetery") != std::string::npos)
         {
             apply_texture(ss, file_path + "/textures/cemetery.jpg");
