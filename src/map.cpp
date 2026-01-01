@@ -7,6 +7,7 @@
 #include <osgText/Text>
 #include <osg/MatrixTransform>
 #include <osg/ShapeDrawable>
+#include <osg/ImageStream>
 
 #include <osgViewer/Viewer>
 #include <osgViewer/ViewerEventHandlers>
@@ -23,15 +24,133 @@
 #include <osgGA/Device>
 
 #include <iostream>
+#include <future>
+#include <chrono>
+#include <thread>
 
 #include "common.h"
 
 #include "camera_manip.cpp"
 
 using namespace osg;
+using namespace std::chrono_literals;
 
 osg::ref_ptr<osgViewer::Viewer> viewer;
 osg::ref_ptr<osg::EllipsoidModel> ellipsoid;
+
+osg::Group* create_loading_screen()
+{
+    std::string libName = osgDB::Registry::instance()->createLibraryNameForExtension("ffmpeg");
+    osgDB::Registry::instance()->loadLibrary(libName);
+
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+
+    osg::StateSet* stateset = geode->getOrCreateStateSet();
+    stateset->setMode(GL_LIGHTING,osg::StateAttribute::OFF);
+
+    // clang-format off
+    static const char* shaderSourceTextureVertex = R"(
+        #version 420 compatibility
+        out vec4 texcoord;
+
+        void main(void)
+        {
+            texcoord = gl_MultiTexCoord0;
+            gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+        }
+        )";
+
+    static const char* shaderSourceTexture2D = R"(
+        #version 420 compatibility
+        uniform sampler2D movie_texture;
+        in vec4 texcoord;
+        out vec4 fragColor;
+
+        void main(void)
+        {
+            vec4 texture_color = texture2D(movie_texture, texcoord.st);
+            fragColor = texture_color;
+        }
+        )";
+    // clang-format on
+
+
+    osg::ref_ptr<osg::Group> group = new osg::Group;
+    osg::Program* program = new osg::Program;
+
+    program->addShader(new osg::Shader(osg::Shader::VERTEX, shaderSourceTextureVertex));
+    program->addShader(new osg::Shader(osg::Shader::FRAGMENT, shaderSourceTexture2D));
+
+    stateset->addUniform(new osg::Uniform("movie_texture",0));
+    stateset->setAttribute(program);
+    stateset->setMode(GL_BLEND, osg::StateAttribute::OFF|osg::StateAttribute::PROTECTED);
+
+    osg::ref_ptr<osg::Image> image = osgDB::readRefImageFile("images/osgmap_loading.mp4");
+
+    osg::Texture2D* texture = new osg::Texture2D(image);
+    texture->setResizeNonPowerOfTwoHint(false);
+    texture->setFilter(osg::Texture::MIN_FILTER,osg::Texture::LINEAR);
+    texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+    texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+    texture->setUnRefImageDataAfterApply(true);
+
+    stateset->setTextureAttribute(0, texture);
+    stateset->setMode(GL_BLEND, osg::StateAttribute::OFF);
+    stateset->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
+
+    osg::ImageStream* imagestream = dynamic_cast<osg::ImageStream*>(image.get());
+
+    if (imagestream)
+    {
+        imagestream->play();
+    }
+
+    if (image)
+    {
+        float width = image->s() * image->getPixelAspectRatio();
+        float height = image->t();
+
+        {
+            geode->setCullingActive(false);
+
+            osg::Geometry* hud = new osg::Geometry;
+            osg::Vec3Array* vertices = new osg::Vec3Array;
+            float depth = -0.1;
+            vertices->push_back(osg::Vec3(0, height, depth));
+            vertices->push_back(osg::Vec3(0, 0, depth));
+            vertices->push_back(osg::Vec3(width, 0, depth));
+            vertices->push_back(osg::Vec3(width, 0, depth));
+            vertices->push_back(osg::Vec3(width, height, depth));
+            vertices->push_back(osg::Vec3(0, height, depth));
+            hud->setVertexArray(vertices);
+
+            osg::Vec2Array* texCoords = new osg::Vec2Array;
+            texCoords->push_back(osg::Vec2(0, 0));
+            texCoords->push_back(osg::Vec2(0, 1));
+            texCoords->push_back(osg::Vec2(1, 1));
+            texCoords->push_back(osg::Vec2(1, 1));
+            texCoords->push_back(osg::Vec2(1, 0));
+            texCoords->push_back(osg::Vec2(0, 0));
+            hud->setTexCoordArray(0, texCoords);
+
+            hud->addPrimitiveSet(new osg::DrawArrays(GL_TRIANGLES, 0, 6));
+            geode->addDrawable(hud);
+
+            osg::MatrixTransform* modelview_abs = new osg::MatrixTransform;
+            modelview_abs->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+            modelview_abs->setMatrix(osg::Matrixf::identity());
+            modelview_abs->addChild(geode);
+
+            osg::Projection* projection = new osg::Projection;
+            projection->setMatrix(osg::Matrixf::ortho2D(0, width, 0, height));
+            projection->addChild(modelview_abs);
+            group->addChild(projection);
+        }
+    }
+
+    return group.release();
+}
+
 
 int main(int argc, char** argv)
 {
@@ -170,56 +289,74 @@ int main(int argc, char** argv)
         viewer->getStats()->collectStats("compile", true);
     }
 
-
-    /////////////////////////////////////////////////////////////////////
-    //////////////////////////////////// CREATE MAP SCENE ///////////////
-    /////////////////////////////////////////////////////////////////////
-
-    osg::MatrixTransform * root = new osg::MatrixTransform;
-    osg::Matrixd ltw;
-    osg::BoundingBox wbb;
-    osg::ref_ptr<osg::Node> land_model = process_landuse(ltw, wbb, file_path);
-    root->setMatrix(ltw);
-    root->addChild(land_model);
-
-    osg::ref_ptr<osg::Node> water_model = process_water(ltw, file_path);
-    root->addChild(water_model);
-
-    osg::ref_ptr<osg::Node> roads_model = process_roads(ltw, file_path);
-    root->addChild(roads_model);
-
-    osg::ref_ptr<osg::Node> buildings_model = process_buildings(ltw, file_path);
-    root->addChild(buildings_model);
-
-    osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
-    root->addChild(labels_model);
-
-    osg::Vec3d wtrans = wbb.center();
-    wtrans.normalize();
-    viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
-    viewer->getLight()->setPosition(osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
-    viewer->getLight()->setDirection(osg::Vec3(wtrans[0], wtrans[1], wtrans[2]));
-    viewer->getLight()->setAmbient(osg::Vec4(0.2f,0.2f,0.2f,1.0f));
-    viewer->getLight()->setDiffuse(osg::Vec4(0.8f,0.8f,0.8f,1.0f));
-    viewer->getLight()->setSpecular(osg::Vec4(0.5f,0.5f,0.5f,1.0f));
-
     // any option left unread are converted into errors to write out later.
     arguments.reportRemainingOptionsAsUnrecognized();
 
-    // report any errors if they have occurred when parsing the program arguments.
+    // report any errors if they have occurred when parsing the program
+    // arguments.
     if (arguments.errors())
     {
         arguments.writeErrorMessages(std::cout);
         return 1;
     }
 
-    viewer->setSceneData(root);
+    /////////////////////////////////////////////////////////////////////
+    //////////////////////////////////// CREATE MAP SCENE ///////////////
+    /////////////////////////////////////////////////////////////////////
+
+
+    osg::MatrixTransform* root = new osg::MatrixTransform;
+    auto prepare_scene = [](osg::MatrixTransform* root, std::string& file_path) {
+        osg::Matrixd ltw;
+        osg::BoundingBox wbb;
+        osg::ref_ptr<osg::Node> land_model =
+            process_landuse(ltw, wbb, file_path);
+        root->setMatrix(ltw);
+        root->addChild(land_model);
+
+        osg::ref_ptr<osg::Node> water_model = process_water(ltw, file_path);
+        root->addChild(water_model);
+
+        osg::ref_ptr<osg::Node> roads_model = process_roads(ltw, file_path);
+        root->addChild(roads_model);
+
+        osg::ref_ptr<osg::Node> buildings_model =
+            process_buildings(ltw, file_path);
+        root->addChild(buildings_model);
+
+        osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
+        root->addChild(labels_model);
+
+        osg::Vec3d wtrans = wbb.center();
+        wtrans.normalize();
+        viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
+        viewer->getLight()->setPosition(
+            osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
+        viewer->getLight()->setDirection(
+            osg::Vec3(wtrans[0], wtrans[1], wtrans[2]));
+        viewer->getLight()->setAmbient(osg::Vec4(0.2f, 0.2f, 0.2f, 1.0f));
+        viewer->getLight()->setDiffuse(osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f));
+        viewer->getLight()->setSpecular(osg::Vec4(0.5f, 0.5f, 0.5f, 1.0f));
+        viewer->setSceneData(root);
+    };
+
+
+    viewer->setSceneData(create_loading_screen());
 
     viewer->realize();
+
+    std::future<void> loading = std::async(std::launch::async, prepare_scene, root, file_path);
 
     while(!viewer->done())
     {
         viewer->frame();
+
+        if (loading.valid() && loading.wait_for(0ms) == std::future_status::ready)
+        {
+            loading.get();
+            viewer->setSceneData(root);
+        }
+
     }
 
     return 0;
