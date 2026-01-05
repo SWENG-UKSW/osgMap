@@ -11,7 +11,8 @@ class GoogleMapsManipulator : public osgGA::CameraManipulator {
 public:
     GoogleMapsManipulator()
         : _distance(100.0), _lastX(0), _lastY(0), _center(0, 0, 1),
-          _isMoving(false), _lastMoveTime(0.0), _movementTimeout(0.2)
+          _isMoving(false), _lastMoveTime(0.0), _movementTimeout(0.2),
+          _maxTiltDeg(75.0)
     {}
 
     bool isMoving() const
@@ -21,6 +22,13 @@ public:
     }
 
     void setMovementTimeout(double seconds) { _movementTimeout = seconds; }
+
+    void setMaxTiltDeg(double degrees) 
+    { 
+        _maxTiltDeg = std::max(0.0, std::min(90.0, degrees));
+    }
+
+    double getMaxTiltDeg() const { return _maxTiltDeg; }
 
     void resetFromBounds()
     {
@@ -126,7 +134,7 @@ public:
 
         // Enforce tilt constraints: 0° (top-down) to 45° (maximum oblique)
         if (_tiltDeg < 0.0) _tiltDeg = 0.0;
-        if (_tiltDeg > 45.0) _tiltDeg = 45.0;
+        if (_tiltDeg > _maxTiltDeg) _tiltDeg = _maxTiltDeg;
 
         // Determine earth radius from scene bounds (default: Earth's mean
         // radius in meters)
@@ -253,7 +261,7 @@ public:
 
                 // Clamp limits
                 if (_tiltDeg < 0.0) _tiltDeg = 0.0; // top-down limit
-                if (_tiltDeg > 45.0) _tiltDeg = 45.0; // flat limit
+                if (_tiltDeg > _maxTiltDeg) _tiltDeg = _maxTiltDeg; // flat limit
             }
 
             _lastX = x;
@@ -300,4 +308,5 @@ private:
     bool _isMoving;
     double _lastMoveTime;
     double _movementTimeout;
+    double _maxTiltDeg;
 };
