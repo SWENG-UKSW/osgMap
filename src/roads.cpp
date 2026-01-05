@@ -200,24 +200,31 @@ public:
     inline float getWidthForFClass(const std::string& fclass)
     {
         static std::unordered_map<std::string, float> mapping;
-        auto it=mapping.find(fclass);
-        if(it!=mapping.end())
-            return it->second;
-        float width=13.5f;
-        if (fclass == "motorway" || fclass == "trunk") width= 19.0f;
-        else if (fclass == "motorway_link" || fclass == "trunk_link") width= 18.0f;
-        else if (fclass == "primary") width= 17.0f;
-        else if (fclass == "secondary" || fclass == "primary_link") width= 16.0f;
-        else if (fclass == "secondary_link" || fclass == "tertiary") width= 14.0f;
+        auto it = mapping.find(fclass);
+        if (it != mapping.end()) return it->second;
+        float width = 13.5f;
+        if (fclass == "motorway" || fclass == "trunk")
+            width = 19.0f;
+        else if (fclass == "motorway_link" || fclass == "trunk_link")
+            width = 18.0f;
+        else if (fclass == "primary")
+            width = 17.0f;
+        else if (fclass == "secondary" || fclass == "primary_link")
+            width = 16.0f;
+        else if (fclass == "secondary_link" || fclass == "tertiary")
+            width = 14.0f;
         else if (fclass == "residential" || fclass == "living_street"
-            || fclass == "tertiary_link")
-            width= 13.0f;
-        else if (fclass == "service" || fclass == "unclassified") width= 11.0f;
-        else if (fclass == "path" || fclass == "footway" || fclass == "cycleway")
-            width= 11.5f;
-        else if (fclass == "track" || fclass == "steps" || fclass == "pedestrian")
-            width= 10.5f;
-        mapping[fclass]=width;
+                 || fclass == "tertiary_link")
+            width = 13.0f;
+        else if (fclass == "service" || fclass == "unclassified")
+            width = 11.0f;
+        else if (fclass == "path" || fclass == "footway"
+                 || fclass == "cycleway")
+            width = 11.5f;
+        else if (fclass == "track" || fclass == "steps"
+                 || fclass == "pedestrian")
+            width = 10.5f;
+        mapping[fclass] = width;
         return width;
     }
 
@@ -262,8 +269,8 @@ public:
             }
         }
 
-        for (auto && d : toRemove) geode.removeDrawable(d);
-        for (auto && d : toAdd) geode.addDrawable(d);
+        for (auto&& d : toRemove) geode.removeDrawable(d);
+        for (auto&& d : toAdd) geode.addDrawable(d);
 
         traverse(geode);
     }
@@ -368,7 +375,7 @@ public:
         }
 
         const size_t numSegments = numPoints - 1;
-        const size_t numVertices = numSegments * 2 + 2; // 2 trojkaty po 3 wierzch
+        const size_t numVertices = numSegments * 2 + 2;
 
         osg::Vec3Array* vertices = new osg::Vec3Array(numVertices);
         osg::Vec3Array* normals = new osg::Vec3Array(1);
