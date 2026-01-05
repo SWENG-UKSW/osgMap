@@ -1,0 +1,8 @@
+/* Poruszanie się po mapie,
+    aby móc się pochylić :
+Naciśnij klawisz 5 na klawiaturze, aby zmienić tryb poruszania się
+Naciśnięcie scrolla służy do poruszania się po mapie
+Naciśnięcie LPM służy do nachylania się na mapie podmróżnymi kątami
+Naciśnięcie PPM służy do oddalania i przybliżania.
+Aby uzyskać więcej informacji o nawigowaniu po mapie naciśnij h.
+    */
