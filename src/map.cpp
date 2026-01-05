@@ -318,7 +318,7 @@ int main(int argc, char** argv)
 
     osg::MatrixTransform* root = new osg::MatrixTransform;
     auto prepare_scene = [](osg::MatrixTransform* root,
-                            std::string& file_path) {
+                            const std::string& file_path) {
         osg::Matrixd ltw;
         osg::BoundingBox wbb;
         osg::ref_ptr<osg::Node> land_model =
