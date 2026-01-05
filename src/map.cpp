@@ -40,13 +40,14 @@ osg::ref_ptr<osg::EllipsoidModel> ellipsoid;
 
 osg::Group* create_loading_screen()
 {
-    std::string libName = osgDB::Registry::instance()->createLibraryNameForExtension("ffmpeg");
+    std::string libName =
+        osgDB::Registry::instance()->createLibraryNameForExtension("ffmpeg");
     osgDB::Registry::instance()->loadLibrary(libName);
 
     osg::ref_ptr<osg::Geode> geode = new osg::Geode;
 
     osg::StateSet* stateset = geode->getOrCreateStateSet();
-    stateset->setMode(GL_LIGHTING,osg::StateAttribute::OFF);
+    stateset->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
     // clang-format off
     static const char* shaderSourceTextureVertex = R"(
@@ -78,18 +79,27 @@ osg::Group* create_loading_screen()
     osg::ref_ptr<osg::Group> group = new osg::Group;
     osg::Program* program = new osg::Program;
 
-    program->addShader(new osg::Shader(osg::Shader::VERTEX, shaderSourceTextureVertex));
-    program->addShader(new osg::Shader(osg::Shader::FRAGMENT, shaderSourceTexture2D));
+    program->addShader(
+        new osg::Shader(osg::Shader::VERTEX, shaderSourceTextureVertex));
+    program->addShader(
+        new osg::Shader(osg::Shader::FRAGMENT, shaderSourceTexture2D));
 
-    stateset->addUniform(new osg::Uniform("movie_texture",0));
+    stateset->addUniform(new osg::Uniform("movie_texture", 0));
     stateset->setAttribute(program);
-    stateset->setMode(GL_BLEND, osg::StateAttribute::OFF|osg::StateAttribute::PROTECTED);
+    stateset->setMode(
+        GL_BLEND, osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
 
-    osg::ref_ptr<osg::Image> image = osgDB::readRefImageFile("images/osgmap_loading.mp4");
+    osg::ref_ptr<osg::Image> image =
+        osgDB::readRefImageFile("images/osgmap_loading.mp4");
+
+    if (!image)
+    {
+        image = osgDB::readRefImageFile("images/loading.dds");
+    }
 
     osg::Texture2D* texture = new osg::Texture2D(image);
     texture->setResizeNonPowerOfTwoHint(false);
-    texture->setFilter(osg::Texture::MIN_FILTER,osg::Texture::LINEAR);
+    texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
     texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
     texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
     texture->setUnRefImageDataAfterApply(true);
@@ -98,7 +108,8 @@ osg::Group* create_loading_screen()
     stateset->setMode(GL_BLEND, osg::StateAttribute::OFF);
     stateset->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
 
-    osg::ImageStream* imagestream = dynamic_cast<osg::ImageStream*>(image.get());
+    osg::ImageStream* imagestream =
+        dynamic_cast<osg::ImageStream*>(image.get());
 
     if (imagestream)
     {
@@ -306,7 +317,8 @@ int main(int argc, char** argv)
 
 
     osg::MatrixTransform* root = new osg::MatrixTransform;
-    auto prepare_scene = [](osg::MatrixTransform* root, std::string& file_path) {
+    auto prepare_scene = [](osg::MatrixTransform* root,
+                            std::string& file_path) {
         osg::Matrixd ltw;
         osg::BoundingBox wbb;
         osg::ref_ptr<osg::Node> land_model =
@@ -345,18 +357,19 @@ int main(int argc, char** argv)
 
     viewer->realize();
 
-    std::future<void> loading = std::async(std::launch::async, prepare_scene, root, file_path);
+    std::future<void> loading =
+        std::async(std::launch::async, prepare_scene, root, file_path);
 
-    while(!viewer->done())
+    while (!viewer->done())
     {
         viewer->frame();
 
-        if (loading.valid() && loading.wait_for(0ms) == std::future_status::ready)
+        if (loading.valid()
+            && loading.wait_for(0ms) == std::future_status::ready)
         {
             loading.get();
             viewer->setSceneData(root);
         }
-
     }
 
     return 0;
