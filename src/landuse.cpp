@@ -15,6 +15,7 @@ Aby uzyska� wi�cej informacji o nawigowaniu po mapie naci�nij h.
 #include <osg/MatrixTransform>
 #include <osg/ShapeDrawable>
 #include <osg/Depth>
+#include <osg/PolygonOffset>
 #include <osg/Material>
 #include <osg/StateSet>
 #include <osg/Texture2D>
@@ -58,6 +59,21 @@ void parse_meta_data(osg::Node* model, Mapping& umap)
             }
         }
     }
+}
+
+// Warstwy terenu - kazdy typ na OSOBNEJ warstwie (wyzsze = blizej kamery)
+// 0:residential,1:industrial,2:commercial,3:retail,4:farmland,5:farmyard,
+// 6:quarry,7:military,8:grass,9:meadow,10:scrub,11:heath,12:forest,
+// 13:orchard,14:nature_reserve,15:allotments,16:park,17:recreation_ground,
+// 18:cemetery (najwyzej)
+void apply_layer_offset(osg::StateSet* ss, int layer)
+{
+    if (!ss) return;
+    // PolygonOffset: wieksze wartosci = dalej od kamery
+    // Warstwa 0 ma offset 18, warstwa 18 ma offset 0
+    float offset = static_cast<float>(18 - layer);
+    osg::ref_ptr<osg::PolygonOffset> po = new osg::PolygonOffset(offset, offset);
+    ss->setAttributeAndModes(po, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
 }
 
 void apply_texture(osg::StateSet* ss, const std::string& path)
@@ -106,7 +122,6 @@ void setup_standard_shader(osg::StateSet* ss, const std::string& data_path)
         ss->setAttributeAndModes(
             program, osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE);
         ss->addUniform(new osg::Uniform("baseTexture", 0));
-        std::cout << "  [OK] Shader Standard (Beton) zaladowany." << std::endl;
     }
 }
 
@@ -159,7 +174,6 @@ void setup_parallax_shader(osg::StateSet* ss, const std::string& data_path)
 
         ss->addUniform(new osg::Uniform("baseTexture", 0));
         ss->addUniform(new osg::Uniform("heightMap", 1));
-        std::cout << "  [OK] Cmentarz 3D: Gotowy" << std::endl;
     }
 }
 
@@ -212,90 +226,137 @@ osg::Node* process_landuse(osg::Matrixd& ltw, osg::BoundingBox& wbb,
         std::vector<osg::ref_ptr<osg::Node>>& nodes = it->second;
         osg::ref_ptr<osg::StateSet> ss = new osg::StateSet();
 
-        // 1. LASY
-        if (name.find("forest") != std::string::npos)
+        // Kazdy typ na OSOBNEJ warstwie (0 = najnizej, 17 = najwyzej)
+        // === WARSTWA 0-3: TERENY MIEJSKIE (na spodzie) ===
+        if (name.find("residential") != std::string::npos)
         {
-            apply_texture(ss, file_path + "/textures/forest.jpg");
-            setup_wind_shader(ss, file_path);
+            apply_texture(ss, file_path + "/textures/concrete.jpg");
+            setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 0);
         }
-        // 2. TRAWA I PARKI
-        else if (name.find("grass") != std::string::npos
-                 || name.find("park") != std::string::npos
-                 || name.find("meadow") != std::string::npos)
+        else if (name.find("industrial") != std::string::npos)
         {
-            apply_texture(ss, file_path + "/textures/grass.jpg");
-            setup_wind_shader(ss, file_path);
+            apply_texture(ss, file_path + "/textures/concrete.jpg");
+            setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 1);
         }
-        // 2b. TERENY REKREACYJNE (Żywa zieleń)
-        else if (name.find("recreation_ground") != std::string::npos)
+        else if (name.find("commercial") != std::string::npos)
         {
-            apply_texture(ss, file_path + "/textures/sport_green.jpg");
-            setup_wind_shader(ss, file_path);
+            apply_texture(ss, file_path + "/textures/concrete.jpg");
+            setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 2);
         }
-        // --- NOWE TYPY (Distinct Textures) ---
-        // 3a. ROLNICTWO (Brąz)
-        else if (name.find("farmland") != std::string::npos
-                 || name.find("farmyard") != std::string::npos)
+        else if (name.find("retail") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/concrete.jpg");
+            setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 3);
+        }
+        // === WARSTWA 4-6: ROLNICTWO, WOJSKO, KAMIENIOŁOMY ===
+        else if (name.find("farmland") != std::string::npos)
         {
             apply_texture(ss, file_path + "/textures/farmland.jpg");
             setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 4);
         }
-        // 3b. ZAROŚLA (Ciemna zieleń)
-        else if (name.find("scrub") != std::string::npos
-                 || name.find("heath") != std::string::npos)
+        else if (name.find("farmyard") != std::string::npos)
         {
-            apply_texture(ss, file_path + "/textures/scrub.jpg");
-            setup_wind_shader(ss, file_path);
-        }
-        // 3c. DZIAŁKI (Oliwkowy)
-        else if (name.find("allotments") != std::string::npos)
-        {
-            apply_texture(ss, file_path + "/textures/allotments.jpg");
-            setup_wind_shader(ss, file_path);
-        }
-        // 3d. SADY I REZERWATY (Leśna zieleń)
-        else if (name.find("orchard") != std::string::npos
-                 || name.find("nature_reserve") != std::string::npos)
-        {
-            apply_texture(ss, file_path + "/textures/orchard.jpg");
-            setup_wind_shader(ss, file_path);
-        }
-        // 3e. WOJSKO (Khaki)
-        else if (name.find("military") != std::string::npos)
-        {
-            apply_texture(ss, file_path + "/textures/military.jpg");
+            apply_texture(ss, file_path + "/textures/farmland.jpg");
             setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 5);
         }
-        // 3f. SKAŁY (Szary)
         else if (name.find("quarry") != std::string::npos)
         {
             apply_texture(ss, file_path + "/textures/rock.jpg");
             setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 6);
         }
-        // -----------------
-        // 4. CMENTARZ
+        else if (name.find("military") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/military.jpg");
+            setup_standard_shader(ss, file_path);
+            apply_layer_offset(ss, 7);
+        }
+        // === WARSTWA 8-10: TRAWA, ŁĄKI, ZAROŚLA ===
+        else if (name.find("grass") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/grass.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 8);
+        }
+        else if (name.find("meadow") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/grass.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 9);
+        }
+        else if (name.find("scrub") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/scrub.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 10);
+        }
+        else if (name.find("heath") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/scrub.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 11);
+        }
+        // === WARSTWA 12: LASY ===
+        else if (name.find("forest") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/forest.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 12);
+        }
+        // === WARSTWA 13-15: SADY, DZIAŁKI, REZERWATY ===
+        else if (name.find("orchard") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/orchard.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 13);
+        }
+        else if (name.find("nature_reserve") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/orchard.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 14);
+        }
+        else if (name.find("allotments") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/allotments.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 15);
+        }
+        // === WARSTWA 16-17: PARKI, TERENY REKREACYJNE ===
+        else if (name.find("park") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/grass.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 16);
+        }
+        else if (name.find("recreation_ground") != std::string::npos)
+        {
+            apply_texture(ss, file_path + "/textures/sport_green.jpg");
+            setup_wind_shader(ss, file_path);
+            apply_layer_offset(ss, 17);
+        }
+        // === WARSTWA 18: CMENTARZ (najwyżej - parallax) ===
         else if (name.find("cemetery") != std::string::npos)
         {
             apply_texture(ss, file_path + "/textures/cemetery.jpg");
             setup_parallax_shader(ss, file_path);
+            apply_layer_offset(ss, 18);
         }
-        // 4. TERENY MIEJSKIE - Beton
-        else if (name.find("residential") != std::string::npos
-                 || name.find("commercial") != std::string::npos
-                 || name.find("industrial") != std::string::npos
-                 || name.find("retail") != std::string::npos)
-        {
-            apply_texture(ss, file_path + "/textures/concrete.jpg");
-            setup_standard_shader(ss, file_path);
-        }
-
         for (size_t i = 0; i < nodes.size(); ++i)
         {
             if (nodes[i].valid()) nodes[i]->setStateSet(ss);
         }
     }
+    // Depth test włączony z zapisem do depth buffer (true)
+    // Dziala razem z PolygonOffset dla rozwiazania Z-fighting
     land_model->getOrCreateStateSet()->setAttributeAndModes(
-        new osg::Depth(osg::Depth::LESS, 0, 1, false));
+        new osg::Depth(osg::Depth::LESS, 0, 1, true));
 
     std::cout << "--- Koniec Landuse ---" << std::endl;
     return land_group.release();
