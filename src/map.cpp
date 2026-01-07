@@ -68,7 +68,8 @@ int main(int argc, char** argv)
     arguments.getApplicationUsage()->addCommandLineOption(
         "--stats", "print out load and compile timing stats");
     arguments.getApplicationUsage()->addCommandLineOption(
-        "--max-tilt <degrees>", "Maximum camera tilt angle in degrees (0-90, default: 75)");
+        "--max-tilt <degrees>",
+        "Maximum camera tilt angle in degrees (0-90, default: 75)");
 
 
     ellipsoid = new osg::EllipsoidModel;
@@ -138,11 +139,11 @@ int main(int argc, char** argv)
 
         osg::ref_ptr<osgGA::KeySwitchMatrixManipulator> keyswitchManipulator =
             new osgGA::KeySwitchMatrixManipulator;
-        
+
         // Create GoogleMapsManipulator and set max tilt
         GoogleMapsManipulator* googleMapsManip = new GoogleMapsManipulator();
         googleMapsManip->setMaxTiltDeg(maxTilt);
-        
+
         keyswitchManipulator->addMatrixManipulator('1', "GoogleMaps",
                                                    googleMapsManip);
         keyswitchManipulator->addMatrixManipulator(
@@ -163,7 +164,8 @@ int main(int argc, char** argv)
         std::string pathfile;
         double animationSpeed = 1.0;
         while (arguments.read("--speed", animationSpeed))
-        {}
+        {
+        }
         char keyForAnimationPath = '8';
         while (arguments.read("-p", pathfile))
         {

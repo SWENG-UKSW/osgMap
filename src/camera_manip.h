@@ -24,9 +24,9 @@ public:
     void resetFromBounds();
 
     void setNode(osg::Node* node) override;
-    
+
     void home(double) override;
-    
+
     void home(const osgGA::GUIEventAdapter&, osgGA::GUIActionAdapter&) override;
 
     osg::Matrixd getInverseMatrix() const override;
