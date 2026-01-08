@@ -293,8 +293,7 @@ int main(int argc, char** argv)
         std::string pathfile;
         double animationSpeed = 1.0;
         while (arguments.read("--speed", animationSpeed))
-        {
-        }
+        {}
         char keyForAnimationPath = '8';
         while (arguments.read("-p", pathfile))
         {
