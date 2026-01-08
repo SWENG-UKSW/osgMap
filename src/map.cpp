@@ -293,7 +293,8 @@ int main(int argc, char** argv)
         std::string pathfile;
         double animationSpeed = 1.0;
         while (arguments.read("--speed", animationSpeed))
-        {}
+        {
+        }
         char keyForAnimationPath = '8';
         while (arguments.read("-p", pathfile))
         {
@@ -363,7 +364,7 @@ int main(int argc, char** argv)
         arguments.writeErrorMessages(std::cout);
         return 1;
     }
-    
+
     /////////////////////////////////////////////////////////////////////
     //////////////////////////////////// CREATE MAP SCENE ///////////////
     /////////////////////////////////////////////////////////////////////
@@ -371,44 +372,44 @@ int main(int argc, char** argv)
 
     osg::MatrixTransform* root = new osg::MatrixTransform;
     auto prepare_scene = [](osg::MatrixTransform* root,
-        const std::string& file_path) {
-            osg::Matrixd ltw;
-            osg::BoundingBox wbb;
-            osg::ref_ptr<osg::Node> land_model =
-                process_landuse(ltw, wbb, file_path);
-            root->setMatrix(ltw);
-            root->addChild(land_model);
+                            const std::string& file_path) {
+        osg::Matrixd ltw;
+        osg::BoundingBox wbb;
+        osg::ref_ptr<osg::Node> land_model =
+            process_landuse(ltw, wbb, file_path);
+        root->setMatrix(ltw);
+        root->addChild(land_model);
 
-            osg::ref_ptr<osg::Node> water_model = process_water(ltw, file_path);
-            root->addChild(water_model);
+        osg::ref_ptr<osg::Node> water_model = process_water(ltw, file_path);
+        root->addChild(water_model);
 
-            osg::ref_ptr<osg::Node> roads_model = process_roads(ltw, file_path);
-            root->addChild(roads_model);
+        osg::ref_ptr<osg::Node> roads_model = process_roads(ltw, file_path);
+        root->addChild(roads_model);
 
-            osg::ref_ptr<osg::Node> buildings_model =
-                process_buildings(ltw, file_path);
-            root->addChild(buildings_model);
+        osg::ref_ptr<osg::Node> buildings_model =
+            process_buildings(ltw, file_path);
+        root->addChild(buildings_model);
 
-            osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
-            root->addChild(labels_model);
+        osg::ref_ptr<osg::Node> labels_model = process_labels(ltw, file_path);
+        root->addChild(labels_model);
 
-            osg::Vec3d wtrans = wbb.center();
-            wtrans.normalize();
-            viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
-            viewer->getLight()->setPosition(
-                osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
-            viewer->getLight()->setDirection(
-                osg::Vec3(wtrans[0], wtrans[1], wtrans[2]));
-            viewer->getLight()->setAmbient(osg::Vec4(0.2f, 0.2f, 0.2f, 1.0f));
-            viewer->getLight()->setDiffuse(osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f));
-            viewer->getLight()->setSpecular(osg::Vec4(0.5f, 0.5f, 0.5f, 1.0f));
-            viewer->setSceneData(root);
+        osg::Vec3d wtrans = wbb.center();
+        wtrans.normalize();
+        viewer->setLightingMode(osg::View::LightingMode::SKY_LIGHT);
+        viewer->getLight()->setPosition(
+            osg::Vec4(wtrans[0], wtrans[1], wtrans[2], 0.f));
+        viewer->getLight()->setDirection(
+            osg::Vec3(wtrans[0], wtrans[1], wtrans[2]));
+        viewer->getLight()->setAmbient(osg::Vec4(0.2f, 0.2f, 0.2f, 1.0f));
+        viewer->getLight()->setDiffuse(osg::Vec4(0.8f, 0.8f, 0.8f, 1.0f));
+        viewer->getLight()->setSpecular(osg::Vec4(0.5f, 0.5f, 0.5f, 1.0f));
+        viewer->setSceneData(root);
     };
-    
+
     viewer->setSceneData(create_loading_screen());
 
     viewer->realize();
-    
+
     std::future<void> loading =
         std::async(std::launch::async, prepare_scene, root, file_path);
 
@@ -426,114 +427,116 @@ int main(int argc, char** argv)
     while (!viewer->done())
     {
         viewer->frame();
-        
+
         if (loading.valid())
         {
-            if( loading.wait_for(0ms) == std::future_status::ready)
-	        {
-	            loading.get();
-	            
-			    // Build your main scene
-			    finalRoot->addChild(root); // your map scene
-			
-			    // Set scene BEFORE realize()
-			    viewer->setSceneData(finalRoot);
-			
-			    // Create HUD
-			    osg::Camera* hud = createHUD("images/logo.png", 0.3f, w, h);
-			
-			    // Find the geode in the HUD (you might need to store it during creation)
-			    osg::Geode* hudGeode = dynamic_cast<osg::Geode*>(hud->getChild(0));
-			
-			    // Add resize handler
-			    viewer->addEventHandler(
-			        new HUDResizeHandler(hud, hudGeode, "images/logo.png", 0.3f));
-			
-			    // Add HUD AFTER realize() (totally allowed)
-			    finalRoot->addChild(hud);
-			
-			    // Initialize to visible
-			    g_currentAlpha = 1.0f;
-			    g_targetAlpha = 1.0f;
-			
-			    // Set initial alpha values
-			    if (g_hudAlpha.valid())
-			    {
-			        g_hudAlpha->set(g_currentAlpha);
-			    }
-			
-			    lastTime = viewer->getFrameStamp()->getReferenceTime();
-	        }
+            if (loading.wait_for(0ms) == std::future_status::ready)
+            {
+                loading.get();
+
+                // Build your main scene
+                finalRoot->addChild(root); // your map scene
+
+                // Set scene BEFORE realize()
+                viewer->setSceneData(finalRoot);
+
+                // Create HUD
+                osg::Camera* hud = createHUD("images/logo.png", 0.3f, w, h);
+
+                // Find the geode in the HUD (you might need to store it during
+                // creation)
+                osg::Geode* hudGeode =
+                    dynamic_cast<osg::Geode*>(hud->getChild(0));
+
+                // Add resize handler
+                viewer->addEventHandler(new HUDResizeHandler(
+                    hud, hudGeode, "images/logo.png", 0.3f));
+
+                // Add HUD AFTER realize() (totally allowed)
+                finalRoot->addChild(hud);
+
+                // Initialize to visible
+                g_currentAlpha = 1.0f;
+                g_targetAlpha = 1.0f;
+
+                // Set initial alpha values
+                if (g_hudAlpha.valid())
+                {
+                    g_hudAlpha->set(g_currentAlpha);
+                }
+
+                lastTime = viewer->getFrameStamp()->getReferenceTime();
+            }
         }
         else
         {
-	        double frameTime = viewer->getFrameStamp()->getReferenceTime();
-	        float deltaTime = frameTime - lastTime;
-	        lastTime = frameTime;
-	
-	        auto* keySwitch = dynamic_cast<osgGA::KeySwitchMatrixManipulator*>(
-	            viewer->getCameraManipulator());
-	
-	        if (keySwitch)
-	        {
-	            osgGA::CameraManipulator* current =
-	                keySwitch->getCurrentMatrixManipulator();
-	
-	            if (auto* google = dynamic_cast<GoogleMapsManipulator*>(current))
-	            {
-	                bool moving = google->isMoving();
-	
-	                // Update target alpha based on movement
-	                if (moving)
-	                {
-	                    g_targetAlpha = 0.0f; // Fade out when moving
-	                }
-	                else
-	                {
-	                    g_targetAlpha = 1.0f; // Fade in when stopped
-	
-	                    // When just stopped moving, update text content
-	                    if (wasMoving)
-	                    {
-	                        std::ostringstream ss;
-	                        osg::Vec3d hit, normal;
-	                        std::string landInfo =
-	                            getLandInfoAtIntersection(finalRoot, hit);
-	                        ss << "Land Data:\n" << landInfo;
-	                        hudSetText(ss.str());
-	                    }
-	                }
-	
-	                wasMoving = moving;
-	            }
-	        }
-	
-	        // ALWAYS smoothly interpolate current alpha toward target (runs every
-	        // frame)
-	        float diff = g_targetAlpha - g_currentAlpha;
-	        if (std::abs(diff) > 0.001f)
-	        {
-	            float step = FADE_SPEED * deltaTime;
-	
-	            if (std::abs(diff) < step)
-	            {
-	                g_currentAlpha = g_targetAlpha;
-	            }
-	            else
-	            {
-	                g_currentAlpha += (diff > 0 ? step : -step);
-	            }
-	
-	            // Clamp to valid range
-	            g_currentAlpha = std::max(0.0f, std::min(1.0f, g_currentAlpha));
-	        }
-	
-	        // ALWAYS update alpha every frame for smooth animation
-	        if (g_hudAlpha.valid())
-	        {
-	            g_hudAlpha->set(g_currentAlpha);
-	        }
-        	
+            double frameTime = viewer->getFrameStamp()->getReferenceTime();
+            float deltaTime = frameTime - lastTime;
+            lastTime = frameTime;
+
+            auto* keySwitch = dynamic_cast<osgGA::KeySwitchMatrixManipulator*>(
+                viewer->getCameraManipulator());
+
+            if (keySwitch)
+            {
+                osgGA::CameraManipulator* current =
+                    keySwitch->getCurrentMatrixManipulator();
+
+                if (auto* google =
+                        dynamic_cast<GoogleMapsManipulator*>(current))
+                {
+                    bool moving = google->isMoving();
+
+                    // Update target alpha based on movement
+                    if (moving)
+                    {
+                        g_targetAlpha = 0.0f; // Fade out when moving
+                    }
+                    else
+                    {
+                        g_targetAlpha = 1.0f; // Fade in when stopped
+
+                        // When just stopped moving, update text content
+                        if (wasMoving)
+                        {
+                            std::ostringstream ss;
+                            osg::Vec3d hit, normal;
+                            std::string landInfo =
+                                getLandInfoAtIntersection(finalRoot, hit);
+                            ss << "Land Data:\n" << landInfo;
+                            hudSetText(ss.str());
+                        }
+                    }
+
+                    wasMoving = moving;
+                }
+            }
+
+            // ALWAYS smoothly interpolate current alpha toward target (runs
+            // every frame)
+            float diff = g_targetAlpha - g_currentAlpha;
+            if (std::abs(diff) > 0.001f)
+            {
+                float step = FADE_SPEED * deltaTime;
+
+                if (std::abs(diff) < step)
+                {
+                    g_currentAlpha = g_targetAlpha;
+                }
+                else
+                {
+                    g_currentAlpha += (diff > 0 ? step : -step);
+                }
+
+                // Clamp to valid range
+                g_currentAlpha = std::max(0.0f, std::min(1.0f, g_currentAlpha));
+            }
+
+            // ALWAYS update alpha every frame for smooth animation
+            if (g_hudAlpha.valid())
+            {
+                g_hudAlpha->set(g_currentAlpha);
+            }
         }
     }
 
