@@ -1,4 +1,4 @@
-#include <osgDB/ReadFile>
+ï»¿#include <osgDB/ReadFile>
 #include <osgUtil/Optimizer>
 #include <osg/CoordinateSystemNode>
 
@@ -20,20 +20,20 @@ using namespace osg;
 
 using Mapping = std::map<std::string, std::vector<osg::ref_ptr<osg::Node>>>;
 
-void parse_meta_data(osg::Node* model, Mapping & umap)
+void parse_meta_data(osg::Node* model, Mapping& umap)
 {
-    osg::Group * group = model->asGroup();
+    osg::Group* group = model->asGroup();
 
     for (unsigned i = 0; i < group->getNumChildren(); i++)
     {
         osg::Node* kido = group->getChild(i);
-        osgSim::ShapeAttributeList * sal = (osgSim::ShapeAttributeList*)kido->getUserData();
-        if (!sal)
-            continue;
+        osgSim::ShapeAttributeList* sal =
+            (osgSim::ShapeAttributeList*)kido->getUserData();
+        if (!sal) continue;
 
         for (unsigned j = 0; j < sal->size(); j++)
         {
-            // sprawdzamy czy atrybut nazywa siê "fclass"
+            // sprawdzamy czy atrybut nazywa siÄ™ "fclass"
             // dla terenu to opis typu kultury
             if ((*sal)[j].getName().find("fclass") != std::string::npos)
             {
@@ -44,7 +44,8 @@ void parse_meta_data(osg::Node* model, Mapping & umap)
     }
 }
 
-osg::Node* process_landuse(osg::Matrixd& ltw, osg::BoundingBox& wbb, const std::string & file_path)
+osg::Node* process_landuse(osg::Matrixd& ltw, osg::BoundingBox& wbb,
+                           const std::string& file_path)
 {
     std::string land_file_path = file_path + "/gis_osm_landuse_a_free_1.shp";
 
@@ -66,46 +67,33 @@ osg::Node* process_landuse(osg::Matrixd& ltw, osg::BoundingBox& wbb, const std::
         osg::DegreesToRadians(mgbb.center().x()), 0.0, ltw);
 
 
-    // Transformacja ze wspó³rzêdnych geograficznych (GEO) do wspó³rzêdnych œwiata (WGS)
+    // Transformacja ze wspÃ³Å‚rzÄ™dnych geograficznych (GEO) do wspÃ³Å‚rzÄ™dnych
+    // Å›wiata (WGS)
     ConvertFromGeoProjVisitor<true> cfgp;
     land_model->accept(cfgp);
 
-    wbb=cfgp._box;
+    wbb = cfgp._box;
 
     WorldToLocalVisitor ltwv(ltw, true);
     land_model->accept(ltwv);
 
 #if 0
-    // dokonuj dodatkowego przetwarzania wierzcho³ków po transformacji z uk³adu Geo do WGS
+    // dokonuj dodatkowego przetwarzania wierzchoÅ‚kÃ³w po transformacji z ukÅ‚adu Geo do WGS
     Mapping umap;
     parse_meta_data(land_model, umap);
 #endif
 
     // requirement from water geometry to avoid z-fighting
     // do not write to depth buffer - zmask set to false
-    land_model->getOrCreateStateSet()->setAttributeAndModes
-        (new osg::Depth(osg::Depth::LESS, 0, 1, false));
+    land_model->getOrCreateStateSet()->setAttributeAndModes(
+        new osg::Depth(osg::Depth::LESS, 0, 1, false));
     // draw terrain first
     land_model->getOrCreateStateSet()->setRenderBinDetails(-10, "RenderBin");
     // do not nest this render bin
     land_model->getOrCreateStateSet()->setNestRenderBins(false);
 
 
-
-
-
-
-
-
-
     // GOOD LUCK!
-
-
-
-
-
-
-
 
 
     return land_model.release();
