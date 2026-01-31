@@ -77,7 +77,7 @@ static const char* fragSource = R"(
         
         vec3 ambient = gl_LightSource[0].ambient.rgb * texColor.rgb * 0.3;
         vec3 diffuse = gl_LightSource[0].diffuse.rgb * texColor.rgb * NdotL;
-        vec3 specular = gl_LightSource[0].specular.rgb * pow(NdotH, 64.0);
+        vec3 specular = gl_LightSource[0].specular.rgb * pow(NdotH, 2.0);
 
         gl_FragColor = vec4(ambient + diffuse + specular, texColor.a);
     }

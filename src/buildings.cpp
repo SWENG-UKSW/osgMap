@@ -96,7 +96,7 @@ void main() {
 
     vec3 ambient = gl_LightSource[0].ambient.rgb * texColor.rgb + vec3(v_texCoord.z);
     vec3 diffuse = gl_LightSource[0].diffuse.rgb * texColor.rgb * NdotL;
-    vec3 specular = gl_LightSource[0].specular.rgb * pow(NdotH, 32.0);
+    vec3 specular = gl_LightSource[0].specular.rgb * pow(NdotH, 2.0);
 
     gl_FragColor = vec4(ambient + diffuse + specular, texColor.a);
 }
